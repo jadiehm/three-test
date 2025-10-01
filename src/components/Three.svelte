@@ -50,7 +50,7 @@
     // 6. GLTF Loader
     const loader = new GLTFLoader();
     // Path to your local model
-    const modelURL = '/assets/splat.gltf';
+    const modelURL = 'https://jadiehm.github.io/three-test/assets/splat.gltf';
 
     loader.load(
       modelURL,
