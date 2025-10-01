@@ -1,0 +1,364 @@
+{
+    "asset": {
+        "copyright": "2024 (c) Adobe Inc.",
+        "generator": "Adobe Substance 3D Stager - 2b7de00a31d7c254384951b3947843d0e76cdcb1",
+        "version": "2.0"
+    },
+    "accessors": [
+        {
+            "bufferView": 0,
+            "componentType": 5126,
+            "count": 11649,
+            "type": "VEC3",
+            "max": [
+                0.1560479998588562,
+                0.05476519837975502,
+                0.014305399730801583
+            ],
+            "min": [
+                0.10563500225543976,
+                -0.023790398612618448,
+                -0.014305399730801583
+            ]
+        },
+        {
+            "bufferView": 1,
+            "componentType": 5126,
+            "count": 11649,
+            "type": "VEC3"
+        },
+        {
+            "bufferView": 2,
+            "componentType": 5126,
+            "count": 11649,
+            "type": "VEC4"
+        },
+        {
+            "bufferView": 3,
+            "componentType": 5126,
+            "count": 11649,
+            "type": "VEC2"
+        },
+        {
+            "bufferView": 4,
+            "componentType": 5125,
+            "count": 55734,
+            "type": "SCALAR",
+            "max": [
+                11648.0
+            ],
+            "min": [
+                0.0
+            ]
+        },
+        {
+            "bufferView": 5,
+            "componentType": 5126,
+            "count": 12409,
+            "type": "VEC3",
+            "max": [
+                -0.07689959555864334,
+                0.06184510141611099,
+                0.016656799241900445
+            ],
+            "min": [
+                -0.1560479998588562,
+                -0.029463699087500573,
+                -0.016656799241900445
+            ]
+        },
+        {
+            "bufferView": 6,
+            "componentType": 5126,
+            "count": 12409,
+            "type": "VEC3"
+        },
+        {
+            "bufferView": 7,
+            "componentType": 5126,
+            "count": 12409,
+            "type": "VEC4"
+        },
+        {
+            "bufferView": 8,
+            "componentType": 5126,
+            "count": 12409,
+            "type": "VEC2"
+        },
+        {
+            "bufferView": 9,
+            "componentType": 5125,
+            "count": 58470,
+            "type": "SCALAR",
+            "max": [
+                12408.0
+            ],
+            "min": [
+                0.0
+            ]
+        },
+        {
+            "bufferView": 10,
+            "componentType": 5126,
+            "count": 23353,
+            "type": "VEC3",
+            "max": [
+                0.11569499969482422,
+                0.051977500319480899,
+                0.012453900650143624
+            ],
+            "min": [
+                -0.09793949872255326,
+                -0.06184510141611099,
+                -0.012453900650143624
+            ]
+        },
+        {
+            "bufferView": 11,
+            "componentType": 5126,
+            "count": 23353,
+            "type": "VEC3"
+        },
+        {
+            "bufferView": 12,
+            "componentType": 5126,
+            "count": 23353,
+            "type": "VEC4"
+        },
+        {
+            "bufferView": 13,
+            "componentType": 5126,
+            "count": 23353,
+            "type": "VEC2"
+        },
+        {
+            "bufferView": 14,
+            "componentType": 5125,
+            "count": 99558,
+            "type": "SCALAR",
+            "max": [
+                23352.0
+            ],
+            "min": [
+                0.0
+            ]
+        }
+    ],
+    "bufferViews": [
+        {
+            "buffer": 0,
+            "byteOffset": 0,
+            "byteLength": 139788,
+            "target": 34962
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 139788,
+            "byteLength": 139788,
+            "target": 34962
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 279576,
+            "byteLength": 186384,
+            "target": 34962
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 465960,
+            "byteLength": 93192,
+            "target": 34962
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 559152,
+            "byteLength": 222936,
+            "target": 34963
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 782088,
+            "byteLength": 148908,
+            "target": 34962
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 930996,
+            "byteLength": 148908,
+            "target": 34962
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 1079904,
+            "byteLength": 198544,
+            "target": 34962
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 1278448,
+            "byteLength": 99272,
+            "target": 34962
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 1377720,
+            "byteLength": 233880,
+            "target": 34963
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 1611600,
+            "byteLength": 280236,
+            "target": 34962
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 1891836,
+            "byteLength": 280236,
+            "target": 34962
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 2172072,
+            "byteLength": 373648,
+            "target": 34962
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 2545720,
+            "byteLength": 186824,
+            "target": 34962
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 2732544,
+            "byteLength": 398232,
+            "target": 34963
+        }
+    ],
+    "buffers": [
+        {
+            "byteLength": 3130776,
+            "uri": "polygraph_binary.bin"
+        }
+    ],
+    "materials": [
+        {
+            "pbrMetallicRoughness": {
+                "baseColorFactor": [
+                    0.5495979189872742,
+                    0.556086003780365,
+                    0.5531270503997803,
+                    1.0
+                ],
+                "roughnessFactor": 0.12999999523162843
+            },
+            "name": "metal_material3",
+            "doubleSided": true,
+            "extensions": {
+                "KHR_materials_specular": {
+                    "extensions": {
+                        "EXT_materials_specular_edge_color": {
+                            "specularEdgeColorEnabled": true
+                        }
+                    },
+                    "specularColorFactor": [
+                        0.7372200489044188,
+                        0.7510700225830078,
+                        0.8170290589332581
+                    ]
+                }
+            }
+        }
+    ],
+    "meshes": [
+        {
+            "name": "groupNumber_0_n3d",
+            "primitives": [
+                {
+                    "attributes": {
+                        "POSITION": 0,
+                        "NORMAL": 1,
+                        "TANGENT": 2,
+                        "TEXCOORD_0": 3
+                    },
+                    "indices": 4,
+                    "material": 0
+                }
+            ]
+        },
+        {
+            "name": "groupNumber_1_n3d",
+            "primitives": [
+                {
+                    "attributes": {
+                        "TEXCOORD_0": 8,
+                        "TANGENT": 7,
+                        "NORMAL": 6,
+                        "POSITION": 5
+                    },
+                    "indices": 9,
+                    "material": 0
+                }
+            ]
+        },
+        {
+            "name": "groupNumber_2_n3d",
+            "primitives": [
+                {
+                    "attributes": {
+                        "POSITION": 10,
+                        "NORMAL": 11,
+                        "TANGENT": 12,
+                        "TEXCOORD_0": 13
+                    },
+                    "indices": 14,
+                    "material": 0
+                }
+            ]
+        }
+    ],
+    "nodes": [
+        {
+            "name": "working_cam_n3d"
+        },
+        {
+            "children": [
+                2,
+                3,
+                4
+            ],
+            "translation": [
+                0.0,
+                0.06184510141611099,
+                0.0
+            ],
+            "name": "polygraph_1_n3d"
+        },
+        {
+            "mesh": 0,
+            "name": "groupNumber_0_n3d"
+        },
+        {
+            "mesh": 1,
+            "name": "groupNumber_1_n3d"
+        },
+        {
+            "mesh": 2,
+            "name": "groupNumber_2_n3d"
+        }
+    ],
+    "scenes": [
+        {
+            "nodes": [
+                1
+            ],
+            "name": "scene"
+        }
+    ],
+    "scene": 0,
+    "extensionsUsed": [
+        "KHR_materials_specular",
+        "EXT_materials_specular_edge_color"
+    ]
+}
