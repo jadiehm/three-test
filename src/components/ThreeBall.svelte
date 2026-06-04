@@ -7,7 +7,17 @@
   import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
   import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
+  // ── DYNAMIC GLOBAL CONFIGURATIONS ────────────────────────────────────
+  let primaryColor = $state('#0052B4');   
+  let secondaryColor = $state('#FFDA44'); 
+  let flagImage = $state('assets/images/ba.png'); 
+  let countryName = $state('Bosnia and Herzegovina');
+
   let canvas = $state();
+  let textureLoader;
+  let flagTexture;
+
+  const getThreeColor = (hex) => new THREE.Color(hex);
 
   // ── 1. Panel Vertex Shader ───────────────────────────────────────────
   const panelVert = `
@@ -32,6 +42,8 @@
   // ── 2. Panel Fragment Shader ─────────────────────────────────────────
   const panelFrag = `
     uniform float uTime;
+    uniform vec3 uPrimaryColor;
+    uniform vec3 uSecondaryColor;
     varying vec3  vNormal;
     varying vec3  vViewPosition;
     varying float vPuffW;
@@ -51,8 +63,8 @@
       float specRed  = pow(max(dot(N, normalize(L_Red + V)), 0.0), 150.0);
       float specBlue = pow(max(dot(N, normalize(L_Blue + V)), 0.0), 150.0);
       
-      surface += vec3(1.0, 0.12, 0.15) * specRed * 0.45;
-      surface += vec3(0.12, 0.45, 1.0) * specBlue * 0.45;
+      surface += uPrimaryColor * specRed * 0.45;
+      surface += uSecondaryColor * specBlue * 0.45;
 
       vec3 ridgeColor = vec3(0.22, 0.25, 0.32) * (0.1 + 0.9 * fresnel);
       surface = mix(surface, ridgeColor + vec3((specRed + specBlue) * 0.15), edgeSlope);
@@ -82,6 +94,8 @@
     uniform float uTime;
     uniform float uTheta;
     uniform float uPhi;
+    uniform vec3 uPrimaryColor;
+    uniform vec3 uSecondaryColor;
 
     varying vec3 vWorldNormal;
     varying vec3 vNormal;
@@ -147,15 +161,15 @@
       float m = 2.0 * sqrt(pow(reflectDir.x, 2.0) + pow(reflectDir.y, 2.0) + pow(reflectDir.z + 1.0, 2.0));
       vec2 sphereMapUv = reflectDir.xy / m + 0.5;
 
-      vec3 redStudioGlint  = vec3(1.0, 0.15, 0.2) * smoothstep(0.4, 0.85, sphereMapUv.y) * 0.14;
-      vec3 blueStudioGlint = vec3(0.15, 0.5, 1.0) * smoothstep(0.6, 0.2, sphereMapUv.x) * 0.14;
+      vec3 redStudioGlint  = uPrimaryColor * smoothstep(0.4, 0.85, sphereMapUv.y) * 0.14;
+      vec3 blueStudioGlint = uSecondaryColor * smoothstep(0.6, 0.2, sphereMapUv.x) * 0.14;
       surface += redStudioGlint + blueStudioGlint;
 
       gl_FragColor = vec4(surface, 1.0);
     }
   `;
 
-  // ── 4. Unified Screen Post-Pass (Maintains Sharp Text on Edges) ──────
+  // ── 4. Screen-Space Blur Filter Pass ─────────────────────────────────
   const postProcessShader = {
     uniforms: {
       tDiffuse: { value: null },
@@ -183,7 +197,6 @@
         vec2 centerOffset = vUv - 0.5;
         float distFromCenter = length(centerOffset);
         
-        // Tilt-Shift blur driver radius mask
         float tiltShiftBlur = smoothstep(0.32, 0.52, distFromCenter) * 0.015;
 
         vec3 color = vec3(0.0);
@@ -217,168 +230,224 @@
     `
   };
 
-  // ── Helper: High-Res Dynamic Canvas Texture ──────────────────────────
-  function createTextTexture(text) {
-    const textCanvas = document.createElement('canvas');
-    textCanvas.width = 2048; 
-    textCanvas.height = 1024;
-    const ctx = textCanvas.getContext('2d');
-
-    ctx.clearRect(0, 0, textCanvas.width, textCanvas.height);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '900 240px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    
-    const words = text.split(' ');
-    if (words.length > 2) {
-      ctx.fillText(words.slice(0, 2).join(' '), 1024, 400);
-      ctx.fillText(words.slice(2).join(' '), 1024, 624);
-    } else {
-      ctx.fillText(text, 1024, 512);
-    }
-
-    const tex = new THREE.CanvasTexture(textCanvas);
-    tex.needsUpdate = true;
-    return tex;
-  }
-
   onMount(() => {
     if (!canvas) return;
 
     let width = canvas.clientWidth || 300;
     let height = canvas.clientHeight || 300;
 
-    const textureLoader = new THREE.TextureLoader();
-    const flagTexture = textureLoader.load('assets/images/fr.png');
-    flagTexture.wrapS = THREE.RepeatWrapping;
-    flagTexture.wrapT = THREE.RepeatWrapping;
-    flagTexture.repeat.set(0.75, 0.75); 
-    flagTexture.offset.set(0.12, 0.12);
+    textureLoader = new THREE.TextureLoader();
+    
+    const configureTexture = (tex) => {
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(0.75, 0.75); 
+      tex.offset.set(0.12, 0.12);
+    };
 
-    const tau=(1+Math.sqrt(5))/2; const raw=[];
-    function evp(a,b,c){for(const[x,y,z]of[[a,b,c],[b,c,a],[c,a,b]])for(const sx of[1,-1])for(const sy of[1,-1])for(const sz of[1,-1])raw.push([sx*x,sy*y,sz*z]);}
-    evp(0,1,3*tau);evp(1,2+tau,2*tau);evp(2,1+2*tau,tau);
-    const vMap=new Map(),V=[];
-    raw.forEach(v=>{const k=v.map(x=>Math.round(x*1000)).join(',');if(!vMap.has(k)){vMap.set(k,V.length);V.push(v);}});
-    const Vn=V.map(v=>{const l=Math.sqrt(v[0]**2+v[1]**2+v[2]**2);return new THREE.Vector3(v[0]/l,v[1]/l,v[2]/l);});
-    const ds=[];
-    for(let i=0;i<V.length;i++)for(let j=i+1;j<V.length;j++){const dx=V[i][0]-V[j][0],dy=V[i][1]-V[j][1],dz=V[i][2]-V[j][2];ds.push(Math.sqrt(dx*dx + dy*dy + dz*dz));}
-    ds.sort((a,b)=>a-b);const THR=ds[0]*1.1;
-    const adj=Array.from({length:60},()=>[]);
-    for(let i=0; i<V.length; i++)for(let j=i+1; j<V.length; j++){const dx=V[i][0]-V[j][0],dy=V[i][1]-V[j][1],dz=V[i][2]-V[j][2];if(Math.sqrt(dx*dx+dy*dy+dz*dz)<THR){adj[i].push(j);adj[j].push(i);}}
-    function turnRight(prev,cur){const ns=adj[cur].filter(n=>n!==prev);const iD=Vn[cur].clone().sub(Vn[prev]).normalize();const nm=Vn[cur];let ba=-Infinity,bn=-1;for(const n of ns){const oD=Vn[n].clone().sub(Vn[cur]).normalize();const cr=new THREE.Vector3().crossVectors(iD,oD);const ang=Math.atan2(cr.dot(nm),iD.dot(oD));if(ang>ba){ba=ang;bn=n;}}return bn;}
-    const faceSet=new Set(),faces=[];
-    for(let i=0;i<V.length;i++)for(const j of adj[i]){let prev=i,cur=j;const fv=[i];for(let s=0;s<7;s++){fv.push(cur);const nx=turnRight(prev,cur);if(nx===i||nx===-1)break;prev=cur;cur=nx;}if(fv.length>=5&&fv.length<=6){const k=[...fv].sort((a,b)=>a-b).join(',');if(!faceSet.has(k)){faceSet.add(k);faces.push([...fv]);}}}
-    const pentagons=faces.filter(f=>f.length===5),hexagons=faces.filter(f=>f.length===6);
+    flagTexture = textureLoader.load(flagImage);
+    configureTexture(flagTexture);
 
-    function orderCCW(vi){const c=new THREE.Vector3();vi.forEach(i=>c.add(Vn[i]));c.normalize();const r=new THREE.Vector3(0,1,0.01).sub(c.clone().multiplyScalar(c.dot(new THREE.Vector3(0,1,0.01)))).normalize();const u=new THREE.Vector3().crossVectors(c,r).normalize();return[...vi].sort((a,b)=>{const da=Vn[a].clone().sub(c),db=Vn[b].clone().sub(c);return Math.atan2(da.dot(u),da.dot(r))-Math.atan2(db.dot(u),db.dot(r));});}
-    function centroid(vi){const c=new THREE.Vector3();vi.forEach(i=>c.add(Vn[i]));return c.normalize();}
+    // ── GENERATE TRUNCATED ICOSAHEDRON (32-PANEL SOCCER BALL) ────────────
+    const phiGold = (1 + Math.sqrt(5)) / 2; 
+    const raw = [];
 
-    function buildGeo(vi, inset=0.055, sub=14){
-      const ord=orderCCW(vi);
-      const cn=new THREE.Vector3();ord.forEach(i=>cn.add(Vn[i]));cn.normalize();
-      const iv=ord.map(i=>Vn[i].clone().lerp(cn,inset).normalize());
-      const N=ord.length,pos=[],nm=[],pw=[],idx=[];
-      let vc=0;const vm2=new Map();
-      function av(v,p){
-        const k=`${Math.round(v.x*1e5)},${Math.round(v.y*1e5)},${Math.round(v.z*1e5)}`;
-        if(vm2.has(k))return vm2.get(k);
-        const id=vc++;vm2.set(k,id);
-        const pt=v.clone().multiplyScalar(2.26);
-        pos.push(pt.x,pt.y,pt.z);nm.push(v.x,v.y,v.z);pw.push(p);return id;
+    // Truncated Icosahedron base point configurations
+    function evp(a, b, c) {
+      for (const [x, y, z] of [[a, b, c], [b, c, a], [c, a, b]]) {
+        for (const sx of [1, -1]) {
+          for (const sy of [1, -1]) {
+            for (const sz of [1, -1]) {
+              raw.push([sx * x, sy * y, sz * z]);
+            }
+          }
+        }
       }
-      for(let fi=0;fi<N;fi++){
-        const A=cn.clone(),B=iv[fi].clone(),C=iv[(fi+1)%N].clone();
-        const grid=[];
-        for(let i=0; i<=sub; i++){
+    }
+    // Standard coordinates defining the 60 vertices of a classic soccer ball
+    evp(0, 1, 3 * phiGold);
+    evp(2, 1 + 2 * phiGold, phiGold);
+    evp(1, 2 + phiGold, 2 * phiGold);
+
+    const vMap = new Map(), V = [];
+    raw.forEach(v => {
+      const k = v.map(x => Math.round(x * 1000)).join(',');
+      if (!vMap.has(k)) {
+        vMap.set(k, V.length);
+        V.push(v);
+      }
+    });
+
+    const Vn = V.map(v => {
+      const l = Math.sqrt(v[0]**2 + v[1]**2 + v[2]**2);
+      return new THREE.Vector3(v[0]/l, v[1]/l, v[2]/l);
+    });
+
+    const ds = [];
+    for (let i = 0; i < V.length; i++) {
+      for (let j = i + 1; j < V.length; j++) {
+        const dx = V[i][0] - V[j][0], dy = V[i][1] - V[j][1], dz = V[i][2] - V[j][2];
+        ds.push(Math.sqrt(dx*dx + dy*dy + dz*dz));
+      }
+    }
+    ds.sort((a, b) => a - b);
+    const THR = ds[0] * 1.1; // Find adjacency threshold across edge links
+
+    const adj = Array.from({ length: 60 }, () => []);
+    for (let i = 0; i < V.length; i++) {
+      for (let j = i + 1; j < V.length; j++) {
+        const dx = V[i][0] - V[j][0], dy = V[i][1] - V[j][1], dz = V[i][2] - V[j][2];
+        if (Math.sqrt(dx*dx + dy*dy + dz*dz) < THR) {
+          adj[i].push(j);
+          adj[j].push(i);
+        }
+      }
+    }
+
+    function turnRight(prev, cur) {
+      const ns = adj[cur].filter(n => n !== prev);
+      const iD = Vn[cur].clone().sub(Vn[prev]).normalize();
+      const nm = Vn[cur];
+      let ba = -Infinity, bn = -1;
+      for (const n of ns) {
+        const oD = Vn[n].clone().sub(Vn[cur]).normalize();
+        const cr = new THREE.Vector3().crossVectors(iD, oD);
+        const ang = Math.atan2(cr.dot(nm), iD.dot(oD));
+        if (ang > ba) { ba = ang; bn = n; }
+      }
+      return bn;
+    }
+
+    const faceSet = new Set(), faces = [];
+    for (let i = 0; i < V.length; i++) {
+      for (const j of adj[i]) {
+        let prev = i, cur = j;
+        const fv = [i];
+        for (let s = 0; s < 7; s++) {
+          fv.push(cur);
+          const nx = turnRight(prev, cur);
+          if (nx === i || nx === -1) break;
+          prev = cur;
+          cur = nx;
+        }
+        if (fv.length >= 5 && fv.length <= 6) {
+          const k = [...fv].sort((a, b) => a - b).join(',');
+          if (!faceSet.has(k)) {
+            faceSet.add(k);
+            faces.push([...fv]);
+          }
+        }
+      }
+    }
+    
+    // Splits exactly into 12 pentagons and 20 hexagons
+    const pentagons = faces.filter(f => f.length === 5);
+    const hexagons = faces.filter(f => f.length === 6);
+
+    function orderCCW(vi) {
+      const c = new THREE.Vector3(); vi.forEach(i => c.add(Vn[i])); c.normalize();
+      const r = new THREE.Vector3(0, 1, 0.01).sub(c.clone().multiplyScalar(c.dot(new THREE.Vector3(0, 1, 0.01)))).normalize();
+      const u = new THREE.Vector3().crossVectors(c, r).normalize();
+      return [...vi].sort((a, b) => {
+        const da = Vn[a].clone().sub(c), db = Vn[b].clone().sub(c);
+        return Math.atan2(da.dot(u), da.dot(r)) - Math.atan2(db.dot(u), db.dot(r));
+      });
+    }
+    function centroid(vi) { const c = new THREE.Vector3(); vi.forEach(i => c.add(Vn[i])); return c.normalize(); }
+
+    function buildGeo(vi, inset = 0.045, sub = 14) {
+      const ord = orderCCW(vi);
+      const cn = new THREE.Vector3(); ord.forEach(i => cn.add(Vn[i])); cn.normalize();
+      const iv = ord.map(i => Vn[i].clone().lerp(cn, inset).normalize());
+      const N = ord.length, pos = [], nm = [], pw = [], idx = [];
+      let vc = 0; const vm2 = new Map();
+      function av(v, p) {
+        const k = `${Math.round(v.x * 1e5)},${Math.round(v.y * 1e5)},${Math.round(v.z * 1e5)}`;
+        if (vm2.has(k)) return vm2.get(k);
+        const id = vc++; vm2.set(k, id);
+        const pt = v.clone().multiplyScalar(2.26);
+        pos.push(pt.x, pt.y, pt.z); nm.push(v.x, v.y, v.z); pw.push(p); return id;
+      }
+      for (let fi = 0; fi < N; fi++) {
+        const A = cn.clone(), B = iv[fi].clone(), C = iv[(fi + 1) % N].clone();
+        const grid = [];
+        for (let i = 0; i <= sub; i++) {
           grid.push([]);
-          for(let j=0; j<=sub-i; j++){
-            const ba = i/sub;
+          for (let j = 0; j <= sub - i; j++) {
+            const ba = i / sub;
             const puffCurve = Math.pow(Math.sin(ba * Math.PI * 0.5), 0.35);
-            const pt=A.clone().multiplyScalar(ba).add(B.clone().multiplyScalar(j/sub)).add(C.clone().multiplyScalar((sub-i-j)/sub)).normalize();
+            const pt = A.clone().multiplyScalar(ba).add(B.clone().multiplyScalar(j / sub)).add(C.clone().multiplyScalar((sub - i - j) / sub)).normalize();
             grid[i].push(av(pt, puffCurve));
           }
         }
-        const gi=(i,j)=>grid[i][j];
-        for(let i=0; i<sub; i++)for(let j=0; j<sub-i; j++){
-          idx.push(gi(i,j),gi(i+1,j),gi(i,j+1));
-          if(j<sub-i-1)idx.push(gi(i+1,j),gi(i+1,j+1),gi(i,j+1));
+        const gi = (i, j) => grid[i][j];
+        for (let i = 0; i < sub; i++) for (let j = 0; j < sub - i; j++) {
+          idx.push(gi(i, j), gi(i + 1, j), gi(i, j + 1));
+          if (j < sub - i - 1) idx.push(gi(i + 1, j), gi(i + 1, j + 1), gi(i, j + 1));
         }
       }
-      const geo=new THREE.BufferGeometry();
-      geo.setAttribute('position',    new THREE.BufferAttribute(new Float32Array(pos),3));
-      geo.setAttribute('normal',      new THREE.BufferAttribute(new Float32Array(nm),3));
-      geo.setAttribute('aPuffWeight', new THREE.BufferAttribute(new Float32Array(pw),1));
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position',    new THREE.BufferAttribute(new Float32Array(pos), 3));
+      geo.setAttribute('normal',      new THREE.BufferAttribute(new Float32Array(nm), 3));
+      geo.setAttribute('aPuffWeight', new THREE.BufferAttribute(new Float32Array(pw), 1));
       geo.setIndex(idx);
       return geo;
     }
 
-    const scene=new THREE.Scene();
+    const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x010102); 
     
-    const camera=new THREE.PerspectiveCamera(50, width/height, 0.1, 100);
-    camera.position.set(0, 0, 6);
+    const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 100);
+    camera.position.set(0, 0, 8);
     
-    const renderer=new THREE.WebGLRenderer({canvas, antialias:true});
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.82; 
 
-    const group=new THREE.Group(); scene.add(group);
-    const panels=[], panelMats=[];
-    const sharedTime={value:0};
-    const sharedTheta={value:0};
-    const sharedPhi={value:0};
-
-    // ── FIXED SINGLE-SCENE TEXT SHEET ────────────────────────────────────
-    // Mapping the canvas texture directly behind the ball inside the perspective pipeline.
-    // Setting depthWrite to false stops it from interfering with glass transparencies.
-    const textTexture = createTextTexture("Bosnia and Herzegovina");
-    const textMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(15.0, 7.5), 
-      new THREE.MeshBasicMaterial({ 
-        map: textTexture, 
-        transparent: true,
-        depthWrite: false 
-      })
-    );
-    textMesh.position.set(0, 0, -3.0); // Anchored safely in back volume space
-    scene.add(textMesh);
+    const group = new THREE.Group(); scene.add(group);
+    const panels = [], panelMats = [];
+    const sharedTime = { value: 0 };
+    const sharedTheta = { value: 0 };
+    const sharedPhi = { value: 0 };
 
     // ── LAYER 1: SOLID GLASS CORE SPHERE ──────────────────────────────────
     const coreMat = new THREE.ShaderMaterial({
       vertexShader: coreVert, fragmentShader: coreFrag,
       uniforms: {
         uTime: sharedTime, uTheta: sharedTheta, uPhi: sharedPhi,
-        uFlagTex: { value: flagTexture }
+        uFlagTex: { value: flagTexture },
+        uPrimaryColor: { value: getThreeColor(primaryColor) },
+        uSecondaryColor: { value: getThreeColor(secondaryColor) }
       }
     });
     const coreMesh = new THREE.Mesh(new THREE.SphereGeometry(2.175, 64, 64), coreMat);
     group.add(coreMesh);
 
     // ── LAYER 2: THE BEVELED PANEL JOINTS OVERLAY ────────────────────────
-    function addPanel(vi){
-      const geo=buildGeo(vi, 0.055, 14);
-      const mat=new THREE.ShaderMaterial({
-        vertexShader:panelVert, fragmentShader:panelFrag,
-        uniforms:{ uTime: sharedTime, uPuff: { value: -0.085 } }, 
+    function addPanel(vi) {
+      const geo = buildGeo(vi, 0.055, 14); // Cleaner, slightly wider gaps for 32-panel layout
+      const mat = new THREE.ShaderMaterial({
+        vertexShader: panelVert, fragmentShader: panelFrag,
+        uniforms: { 
+          uTime: sharedTime, 
+          uPuff: { value: -0.085 },
+          uPrimaryColor: { value: getThreeColor(primaryColor) },
+          uSecondaryColor: { value: getThreeColor(secondaryColor) }
+        }, 
         transparent: true, depthWrite: true, blending: THREE.NormalBlending
       });
       panelMats.push(mat);
-      const mesh=new THREE.Mesh(geo,mat);
-      mesh.userData.normal=centroid(vi);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.userData.normal = centroid(vi);
       group.add(mesh); panels.push(mesh);
     }
 
-    pentagons.forEach(f=>addPanel(orderCCW(f)));
-    hexagons.forEach((f,hi)=>{
-      const o=orderCCW(f);
-      if(hi>=16){addPanel(o);}
-      else{const[v0,v1,v2,v3,v4,v5]=o;addPanel([v0,v1,v2,v3]);addPanel([v0,v3,v4,v5]);}
-    });
+    // Directly maps panels without complex sub-splitting rules
+    pentagons.forEach(f => addPanel(orderCCW(f)));
+    hexagons.forEach(f => addPanel(orderCCW(f)));
 
     // ── POST-PROCESSING PIPELINE STACK ───────────────────────────────────
     const composer = new EffectComposer(renderer);
@@ -391,55 +460,56 @@
     const photoFilterPass = new ShaderPass(postProcessShader);
     composer.addPass(photoFilterPass);
 
-    // ── Interaction Logistics ──────────────────────────────────────────────
-    const ZOOM_NEAR=2.5, ZOOM_FAR=6, ASPEED=0.018;
-    let zoomState='idle', animProg=0;
-    const sQ=new THREE.Quaternion(), tQ=new THREE.Quaternion();
-    let sCZ=ZOOM_FAR, tCZ=ZOOM_FAR;
-    const ease=x=>x<0.5?2*x*x:-1+(4-2*x)*x;
-    const rc=new THREE.Raycaster(), ndc=new THREE.Vector2();
-
-    function handleClick(cx,cy){
-      if(zoomState==='zoomed'||zoomState==='zooming-in'){sCZ=camera.position.z;tCZ=ZOOM_FAR;animProg=0;zoomState='zooming-out';return;}
-      if(zoomState!=='idle')return;
-      const rect=canvas.getBoundingClientRect();
-      ndc.x=(cx-rect.left)/rect.width*2-1;ndc.y=-((cy-rect.top)/rect.height)*2+1;
-      rc.setFromCamera(ndc,camera);
-      const hits=rc.intersectObjects(panels);if(!hits.length)return;
-      sQ.copy(group.quaternion);
-      tQ.setFromUnitVectors(hits[0].object.userData.normal,new THREE.Vector3(0,0,1));
-      sCZ=camera.position.z;tCZ=ZOOM_NEAR;animProg=0;zoomState='zooming-in';vel={x:0,y:0};
-    }
-
-    let drag=false, pm={x:0,y:0}, md={x:0,y:0}, vel={x:0,y:0}, theta=0, phi=0;
-    const onMouseDown=e=>{md={x:e.clientX,y:e.clientY};if(zoomState!=='idle')return;drag=true;pm={x:e.clientX,y:e.clientY};vel={x:0,y:0};};
-    const onMouseUp=e=>{drag=false;if(Math.hypot(e.clientX-md.x,e.clientY-md.y)<5)handleClick(e.clientX,e.clientY);};
-    const onMouseMove=e=>{
-      if(zoomState==='idle'){
-        const rect=canvas.getBoundingClientRect();
-        ndc.x=(e.clientX-rect.left)/rect.width*2-1;ndc.y=-((e.clientY-rect.top)/rect.height)*2+1;
-        rc.setFromCamera(ndc,camera);
-        canvas.style.cursor=rc.intersectObjects(panels).length?'pointer':drag?'grabbing':'grab';
-      } else{canvas.style.cursor=zoomState==='zoomed'?'zoom-out':'default';}
-      if(!drag||zoomState!=='idle')return;
-      const dx=e.clientX-pm.x, dy=e.clientY-pm.y;
-      vel={x:dx,y:dy}; theta+=dx*0.005;
-      phi=Math.max(-Math.PI/2, Math.min(Math.PI/2, phi+dy*0.005));
-      pm={x:e.clientX,y:e.clientY};
+    // ── INTERACTION LOGISTICS (Auto-Rotation + Mouse Tilt) ───────────────
+    let autoTheta = 0;
+    let targetTiltX = 0, targetTiltY = 0;
+    let currentTiltX = 0, currentTiltY = 0;
+    
+    const onMouseMove = e => {
+      const rect = canvas.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 2 - 1; 
+      const y = -((e.clientY - rect.top) / rect.height) * 2 + 1; 
+      
+      targetTiltX = x * (Math.PI * 0.35); 
+      targetTiltY = y * (Math.PI * 0.35); 
     };
-    let lt=null, td=null;
-    const onTouchStart=e=>{lt=e.touches[0];td={x:e.touches[0].clientX,y:e.touches[0].clientY};};
-    const onTouchEnd=e=>{if(!td)return;const tt=e.changedTouches[0];if(Math.hypot(tt.clientX-td.x,tt.clientY-td.y)<10)handleClick(tt.clientX,tt.clientY);td=null;};
-    const onTouchMove=e=>{e.preventDefault();if(zoomState!=='idle')return;const tt=e.touches[0];theta+=(tt.clientX-lt.clientX)*0.006;phi=Math.max(-Math.PI/2,Math.min(Math.PI/2,phi+(tt.clientY-lt.clientY)*0.006));lt=tt;td=null;};
-    const onWheel=e=>{camera.position.z=Math.max(3,Math.min(12,camera.position.z+e.deltaY*0.01));};
 
-    canvas.addEventListener('mousedown',onMouseDown);
-    window.addEventListener('mouseup',onMouseUp);
-    window.addEventListener('mousemove',onMouseMove);
-    canvas.addEventListener('touchstart',onTouchStart);
-    canvas.addEventListener('touchend',onTouchEnd);
-    canvas.addEventListener('touchmove',onTouchMove,{passive:false});
-    canvas.addEventListener('wheel',onWheel,{passive:true});
+    const onTouchMove = e => {
+      const rect = canvas.getBoundingClientRect();
+      const t = e.touches[0];
+      const x = ((t.clientX - rect.left) / rect.width) * 2 - 1;
+      const y = -((t.clientY - rect.top) / rect.height) * 2 + 1;
+      
+      targetTiltX = x * (Math.PI * 0.35);
+      targetTiltY = y * (Math.PI * 0.35);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('touchmove', onTouchMove, { passive: true });
+
+    // ── REACTIVE RUNE WATCHERS ───────────────────────────────────────────
+    $effect(() => {
+      const pCol = getThreeColor(primaryColor);
+      coreMat.uniforms.uPrimaryColor.value.copy(pCol);
+      panelMats.forEach(m => m.uniforms.uPrimaryColor.value.copy(pCol));
+    });
+
+    $effect(() => {
+      const sCol = getThreeColor(secondaryColor);
+      coreMat.uniforms.uSecondaryColor.value.copy(sCol);
+      panelMats.forEach(m => m.uniforms.uSecondaryColor.value.copy(sCol));
+    });
+
+    $effect(() => {
+      if (textureLoader) {
+        textureLoader.load(flagImage, (newTex) => {
+          configureTexture(newTex);
+          const oldTex = coreMat.uniforms.uFlagTex.value;
+          coreMat.uniforms.uFlagTex.value = newTex;
+          if (oldTex) oldTex.dispose(); 
+        });
+      }
+    });
 
     const ro = new ResizeObserver(() => {
       const w = canvas.clientWidth;
@@ -454,58 +524,61 @@
     ro.observe(canvas);
 
     let rafId;
-    const animate=()=>{
-      rafId=requestAnimationFrame(animate);
-      sharedTime.value+=0.004;
+    const animate = () => {
+      rafId = requestAnimationFrame(animate);
+      sharedTime.value += 0.004;
       
       photoFilterPass.uniforms.uNoiseSeed.value = Math.random() * 100.0;
 
-      if(zoomState==='zooming-in'||zoomState==='zooming-out'){
-        animProg=Math.min(1,animProg+ASPEED);
-        const et=ease(animProg);
-        if(zoomState==='zooming-in')group.quaternion.slerpQuaternions(sQ,tQ,et);
-        camera.position.z=sCZ+(tCZ-sCZ)*et;
-        if(animProg>=1){if(zoomState==='zooming-in'){zoomState='zoomed';}else{const eu=new THREE.Euler().setFromQuaternion(group.quaternion,'XYZ');theta=eu.y;phi=Math.max(-Math.PI/2,Math.min(Math.PI/2,eu.x));zoomState='idle';}}
-      } else if(zoomState==='idle'){
-        if(!drag){vel.x*=0.92;theta+=vel.x*0.003;theta+=0.004;}
-        group.rotation.y=theta;group.rotation.x=phi;
-      }
+      autoTheta += 0.004; 
+
+      currentTiltX += (targetTiltX - currentTiltX) * 0.08;
+      currentTiltY += (targetTiltY - currentTiltY) * 0.08;
+
+      group.rotation.y = autoTheta + currentTiltX;
+      group.rotation.x = currentTiltY;
       
-      sharedTheta.value = theta;
-      sharedPhi.value = phi;
+      sharedTheta.value = autoTheta + currentTiltX;
+      sharedPhi.value = currentTiltY;
 
       composer.render();
     };
     animate();
 
-    return()=>{
-      cancelAnimationFrame(rafId);ro.disconnect();
-      canvas.removeEventListener('mousedown',onMouseDown);window.removeEventListener('mouseup',onMouseUp);window.addEventListener('mousemove',onMouseMove);
-      canvas.removeEventListener('touchstart',onTouchStart);canvas.removeEventListener('touchend',onTouchEnd);canvas.removeEventListener('touchmove',onTouchMove);canvas.removeEventListener('wheel',onWheel);
-      panelMats.forEach(m=>m.dispose());textTexture.dispose();coreMat.dispose();flagTexture.dispose();composer.dispose();renderer.dispose();
+    return () => {
+      cancelAnimationFrame(rafId); ro.disconnect();
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('touchmove', onTouchMove);
+      panelMats.forEach(m => m.dispose()); coreMat.dispose(); if (flagTexture) flagTexture.dispose(); composer.dispose(); renderer.dispose();
     };
   });
 </script>
 
+<div class="header-text-container" style="--primary-color: {primaryColor}; --secondary-color: {secondaryColor};">
+    <h1 class="gradient-text" data-text="How the world searches for soccer">How the world searches for soccer</h1>
+</div>
 <div class="wrapper">
   <div class="canvas-container">
     <canvas bind:this={canvas}></canvas>
   </div>
-  <p class="hint">Click a panel to zoom in · Click again to zoom out · Drag to rotate · Scroll to zoom</p>
 </div>
+<h3 class="country-name">{countryName}</h3>
 
 <style>
   .wrapper { 
-    position: relative; 
+    position: absolute;
+    top: -4rem; left: 0; bottom: 0; right: 0;
     width: 100%; 
-    height: 100vh; 
-    background: #010102; 
+    height: 100svh; 
     overflow: hidden; 
+     z-index: 1;
   }
   
   .canvas-container {
-    position: absolute;
-    top: 0; left: 0; bottom: 0; right: 0;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    mix-blend-mode: screen; 
     z-index: 1;
   }
   
@@ -514,10 +587,96 @@
     width: 100%; 
     height: 100%; 
   }
-  
-  .hint {
-    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
-    color: rgba(255,255,255,0.18); font-size: 12px; pointer-events: none;
-    white-space: nowrap; margin: 0; line-height: 1; z-index: 3;
+
+  .header-text-container {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 2rem 2rem 0 2rem;
+    position: relative;
+    z-index: 1000;
+  }
+
+  .gradient-text {
+    font-family: var(--sans);
+    font-size: 2rem;
+    font-weight: 500;
+    letter-spacing: -0.03em;
+    margin: 0;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-image: linear-gradient(
+      135deg,
+      var(--primary-color) 0%,
+      var(--secondary-color) 25%,
+      var(--primary-color) 50%,
+      var(--secondary-color) 75%,
+      var(--primary-color) 100%
+    );
+    background-size: 400% 100%;
+    animation: fluid-flow 8s linear infinite;
+    position: relative;
+  }
+
+  .gradient-text::after {
+    content: attr(data-text);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    
+    /* 1. Explicitly clear out all vector clipping fields */
+    background-clip: unset;
+    -webkit-background-clip: unset;
+    background-image: none;
+    
+    /* 2. Set text structural fill to clear so only the shadow draws */
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    
+    /* 3. Cast high-intensity neon blurs via CSS shadow vectors using your colors */
+    text-shadow: 
+      0 0 10px #ffffff,
+      0 0 25px #ffffff,
+      0 0 50px #ffffff;
+      
+    /* 4. Soften the overall light bleed and drop opacity so it stays elegant */
+    filter: blur(4px);
+    opacity: 0.2;
+    
+    /* Keep animation rules to maintain precise sync matching main tag bounds */
+    animation: fluid-flow 8s linear infinite;
+  }
+
+  @keyframes fluid-flow {
+    0% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0% 50%;
+    }
+  }
+
+  .country-name {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--sans);
+    font-weight: 500;
+    font-size: 200px;
+    text-align: center;
+    color: #ffffff;
+    z-index: 3;
+    padding:0;
+    margin: 0;
+    line-height: 1;
   }
 </style>
