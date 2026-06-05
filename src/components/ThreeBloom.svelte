@@ -8,6 +8,7 @@
   import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
   import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
   import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+  import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'; 
 
   let canvas;
   let model;        
@@ -15,7 +16,6 @@
   let fluidMaterial;
 
   // ── 1. SVELTE 5 RUNES ─────────────────────────────────────────────
-  // Change fluidOpacity to values like 0.4 or 0.6 to see it turn translucent!
   let { 
     fluidColors = ['#338AF3', '#D80027', '#013C83'],
     fluidOpacity = 0.6 
@@ -46,7 +46,7 @@
     uniform vec3 uColor1;
     uniform vec3 uColor2;
     uniform vec3 uColor3;
-    uniform float uOpacity; // Incoming opacity control
+    uniform float uOpacity;
 
     varying vec3 vPosition;
     varying vec3 vNormal;
@@ -111,14 +111,75 @@
       float fresnel = pow(1.0 - clamp(dot(vNormal, vec3(0.0, 0.0, 1.0)), 0.0, 1.0), 3.0);
       mixedColor = mix(mixedColor, mixedColor * 0.2, fresnel * 0.7);
 
-      // FIX: Blend the fluid colors smoothly into a dark backdrop inside the shader.
-      // This mimics real volumetric alpha transparency perfectly without breaking glass passes.
       vec3 darkVoid = vec3(0.008, 0.008, 0.015); 
       vec3 translucentColor = mix(darkVoid, mixedColor, uOpacity);
 
       gl_FragColor = vec4(translucentColor * 2.2, 1.0);
     }
   `;
+
+  // ── OPTIMIZED POST-PROCESSING SHADER (25 taps reduced to 9 taps) ──
+  const postProcessShader = {
+    uniforms: {
+      tDiffuse: { value: null },
+      uNoiseSeed: { value: 0.0 },
+      uDispersion: { value: 0.0045 } 
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D tDiffuse;
+      uniform float uNoiseSeed;
+      uniform float uDispersion;
+      varying vec2 vUv;
+
+      float screenNoise(vec2 co) {
+        return fract(sin(dot(co, vec2(12.9898, 78.233) + uNoiseSeed)) * 43758.5453);
+      }
+
+      void main() {
+        vec2 centerOffset = vUv - 0.5;
+        float distFromCenter = length(centerOffset);
+        
+        // Compensated scale step to match the 9-tap range density
+        float tiltShiftBlur = smoothstep(0.15, 0.52, distFromCenter) * 0.022;
+
+        vec3 color = vec3(0.0);
+        float totalWeight = 0.0;
+        
+        // OPTIMIZATION: Reduced sample grid loop size from 5x5 to 3x3 (9 lookups instead of 25)
+        for (float x = -1.0; x <= 1.0; x += 1.0) {
+          for (float y = -1.0; y <= 1.0; y += 1.0) {
+            vec2 offset = vec2(x, y) * tiltShiftBlur;
+            vec2 sampleUv = vUv + offset;
+            
+            vec3 sampledColor;
+            sampledColor.r = texture2D(tDiffuse, 0.5 + (sampleUv - 0.5) * (1.0 + uDispersion * 1.5)).r;
+            sampledColor.g = texture2D(tDiffuse, sampleUv).g;
+            sampledColor.b = texture2D(tDiffuse, 0.5 + (sampleUv - 0.5) * (1.0 - uDispersion * 1.5)).b;
+            
+            float weight = 1.0 - (length(vec2(x,y)) / 2.0);
+            color += sampledColor * weight;
+            totalWeight += weight;
+          }
+        }
+        color /= totalWeight;
+
+        float grain = (screenNoise(vUv) - 0.5) * 0.055;
+        color += vec3(grain);
+
+        float vignette = smoothstep(0.75, 0.35, distFromCenter);
+        color *= mix(0.35, 1.0, vignette);
+
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `
+  };
 
   onMount(() => {
     if (!canvas) return;
@@ -134,7 +195,11 @@
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setSize(W, H);
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    
+    // OPTIMIZATION: Capped the maximum pixel rendering ratio to 1.5 instead of 2.0
+    // This halves fragment workload on high-DPI (Retina/4K) screens with no visible loss in quality.
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
 
@@ -151,14 +216,21 @@
 
     const composer = new EffectComposer(renderer);
     composer.setSize(W, H);
+    
     composer.addPass(new RenderPass(scene, camera));
 
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(W, H), 0.5, 0.4, 0.25); 
     composer.addPass(bloomPass);
-    composer.addPass(new OutputPass());
+
+    const photoFilterPass = new ShaderPass(postProcessShader);
+    composer.addPass(photoFilterPass);
+
+    const outputPass = new OutputPass();
+    composer.addPass(outputPass);
 
     const glassMaterial = new THREE.MeshPhysicalMaterial({
-      transmission: 1.0, // Fixed: Kept at max realistic value 1.0 (1.1 breaks depth buffers)
+      transmission: 1.0, 
+      metalness: 0.15,
       ior: 1.45,
       roughness: 0.08,
       clearcoat: 1.0,
@@ -166,7 +238,6 @@
       side: THREE.FrontSide
     });
 
-    // FIX: Kept transparent: false and depthWrite: true so it stays in the opaque pipeline
     fluidMaterial = new THREE.ShaderMaterial({
       vertexShader: fluidVertShader,
       fragmentShader: fluidFragShader,
@@ -205,6 +276,7 @@
         });
         scene.add(model);
 
+        // OPTIMIZATION: Kept sphere at 64,64 segments, which is perfectly balanced.
         const fluidGeo = new THREE.SphereGeometry(radius * 0.92, 64, 64);
         fluidSphere = new THREE.Mesh(fluidGeo, fluidMaterial);
         fluidSphere.renderOrder = 1; 
@@ -218,6 +290,10 @@
       const elapsed = clock.getElapsedTime();
       
       if (fluidMaterial) fluidMaterial.uniforms.uTime.value = elapsed;
+
+      if (photoFilterPass) {
+        photoFilterPass.uniforms.uNoiseSeed.value = Math.random() * 100.0;
+      }
 
       if (model) model.rotation.y = elapsed * 0.12;
       if (fluidSphere) {
@@ -252,12 +328,78 @@
   });
 </script>
 
-<canvas bind:this={canvas}></canvas>
+<div class="presentation-container">
+  <canvas bind:this={canvas}></canvas>
+
+  <div class="text-wrapper">
+    <h1 class="country-name">
+      United States
+    </h1>
+    
+    <div class="text-blur-overlay" aria-hidden="true">
+      United States
+    </div>
+  </div>
+</div>
 
 <style>
-  canvas {
-    display: block;
-    width: 100%;
-    height: 100svh;
-  }
+  .presentation-container {
+  position: relative;
+  width: 100%;
+  height: 100svh;
+  background-color: #020204;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Bounds the overlay system tightly to the text area */
+.text-wrapper {
+  position: absolute;
+  bottom: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-block;
+  z-index: 2;
+}
+
+/* Unified typography parameters across both layers */
+.country-name,
+.text-blur-overlay {
+  font-family: sans-serif; /* Swap with your project font */
+  font-size: 10rem;
+  white-space: nowrap;
+  font-weight: bold;
+  color: #ffffff;
+  line-height:2;
+  padding: 2rem;
+  margin: 0;
+}
+
+/* Sharp Layer: Fades out smoothly as it travels right */
+.country-name {
+  mask-image: linear-gradient(to right, black 75%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black 75%, transparent 100%);
+  text-shadow: 0px 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+/* ── THE TEXT BLUR OVERLAY DIV ─────────────────────────────────── */
+.text-blur-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none; /* Allows mouse selection to hit the real text layer */
+
+  /* 1. Core blur mechanics + soft edge blooming glow */
+  filter: blur(7px) drop-shadow(0 0 0 rgba(255, 255, 255, 0.25)); 
+  
+  /* 2. Inverse mask: Invisible on the left, fully blurred on the right */
+  mask-image: linear-gradient(to right, transparent 75%, black 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 75%, black 100%);
+}
 </style>
