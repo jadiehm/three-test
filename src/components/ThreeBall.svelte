@@ -10,7 +10,7 @@
   // ── DYNAMIC GLOBAL CONFIGURATIONS ────────────────────────────────────
   let primaryColor = $state('#0052B4');   
   let secondaryColor = $state('#FFDA44'); 
-  let flagImage = $state('assets/images/ba.png'); 
+  let flagImage = $state('assets/images/us.png'); 
   let countryName = $state('Bosnia and Herzegovina');
 
   let canvas = $state();
@@ -554,15 +554,15 @@
   });
 </script>
 
-<div class="header-text-container" style="--primary-color: {primaryColor}; --secondary-color: {secondaryColor};">
+<!-- <div class="header-text-container" style="--primary-color: {primaryColor}; --secondary-color: {secondaryColor};">
     <h1 class="gradient-text" data-text="How the world searches for soccer">How the world searches for soccer</h1>
-</div>
+</div> -->
 <div class="wrapper">
   <div class="canvas-container">
     <canvas bind:this={canvas}></canvas>
   </div>
 </div>
-<h3 class="country-name">{countryName}</h3>
+<!-- <h3 class="country-name">{countryName}</h3> -->
 
 <style>
   .wrapper { 
@@ -618,38 +618,33 @@
     background-size: 400% 100%;
     animation: fluid-flow 8s linear infinite;
     position: relative;
+    z-index: 999;
   }
 
   .gradient-text::after {
     content: attr(data-text);
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    z-index: -1;
-    
-    /* 1. Explicitly clear out all vector clipping fields */
-    background-clip: unset;
-    -webkit-background-clip: unset;
-    background-image: none;
-    
-    /* 2. Set text structural fill to clear so only the shadow draws */
+    font-family: var(--sans);
+    font-size: 2rem;
+    font-weight: 500;
+    letter-spacing: -0.03em;
+    margin: 0;
+    background-clip: text;
+    -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    color: transparent;
-    
-    /* 3. Cast high-intensity neon blurs via CSS shadow vectors using your colors */
-    text-shadow: 
-      0 0 10px #ffffff,
-      0 0 25px #ffffff,
-      0 0 50px #ffffff;
-      
-    /* 4. Soften the overall light bleed and drop opacity so it stays elegant */
-    filter: blur(4px);
-    opacity: 0.2;
-    
-    /* Keep animation rules to maintain precise sync matching main tag bounds */
+    background-image: linear-gradient(
+      135deg,
+      var(--primary-color) 0%,
+      var(--secondary-color) 25%,
+      var(--primary-color) 50%,
+      var(--secondary-color) 75%,
+      var(--primary-color) 100%
+    );
+    background-size: 400% 100%;
     animation: fluid-flow 8s linear infinite;
+    position: absolute;
+    top:0;
+    left:0;
+    filter: blur(4px);
   }
 
   @keyframes fluid-flow {
