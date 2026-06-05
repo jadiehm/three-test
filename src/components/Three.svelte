@@ -119,6 +119,48 @@
     const photoFilterPass = new ShaderPass(postProcessShader);
     composer.addPass(photoFilterPass);
 
+    // ── Outer glow shell ─────────────────────────────────────────
+    const glowVert = `
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+      void main() {
+        vNormal  = normalize(normalMatrix * normal);
+        vec4 mv  = modelViewMatrix * vec4(position, 1.0);
+        vViewDir = normalize(-mv.xyz);
+        gl_Position = projectionMatrix * mv;
+      }
+    `;
+
+    const glowFrag = `
+      uniform vec3  glowColor;
+      uniform float time;
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+
+      void main() {
+        float NdotV  = clamp(dot(normalize(vNormal), normalize(vViewDir)), 0.0, 1.0);
+        // Pure rim — bright at edge, invisible in center
+        float rim    = pow(1.0 - NdotV, 3.5);
+        // Breathe the glow slightly
+        float pulse  = 0.85 + 0.15 * sin(time * 0.8);
+        float alpha  = rim * pulse * 0.5;
+        gl_FragColor = vec4(glowColor * rim * pulse * 1.5, alpha);
+      }
+    `;
+
+    const glowMat = new THREE.ShaderMaterial({
+      vertexShader:   glowVert,
+      fragmentShader: glowFrag,
+      uniforms: {
+        glowColor: { value: new THREE.Color(HEX_A) },
+        time:      { value: 0 },
+      },
+      transparent: true,
+      depthWrite:  false,
+      side:        THREE.BackSide, // render inside-out so it surrounds the ball
+      blending:    THREE.AdditiveBlending,
+    });
+
     const ballVert = `
       varying vec3 vWorldNormal;
       varying vec3 vNormal;
@@ -135,7 +177,7 @@
 
     const ballFrag = `
       uniform float time;
-      uniform float modelRotY;
+      uniform float uTheta;
       uniform vec3  colorA;
       uniform vec3  colorB;
       uniform vec3  colorC;
@@ -144,13 +186,6 @@
       varying vec3 vWorldNormal;
       varying vec3 vNormal;
       varying vec3 vViewDir;
-
-      // Counter-rotate world normal around Y so fluid stays
-      // in world space regardless of ball rotation
-      vec3 rotateY(vec3 v, float a) {
-        float c = cos(a); float s = sin(a);
-        return vec3(v.x*c + v.z*s, v.y, -v.x*s + v.z*c);
-      }
 
       vec2 getFluidOffset(vec3 p, float t, float spinOffset) {
         vec3 q = vec3(
@@ -166,31 +201,31 @@
         return vec2(
           sin(p.x + r.y * 2.5 + t * 0.6),
           cos(p.y * r.x * 2.5 + t * 0.5)
-        ) * 0.5;
+        ) * 0.35;
       }
 
-      vec3 threeColorFluid(vec3 wp, float t) {
-        vec2 w1 = getFluidOffset(wp * 1.3, t * 0.9,  0.0);
-        vec2 w2 = getFluidOffset(wp * 1.0, t * 0.6,  2.1);
-        vec2 w3 = getFluidOffset(wp * 1.7, t * 0.4,  4.3);
-
-        vec2 uv = vec2(
-          atan(wp.z, wp.x) / 6.28318 + 0.5,
-          wp.y * 0.5 + 0.5
+      vec2 rotateUV(vec2 uv, float rotation) {
+        float mid = 0.5;
+        return vec2(
+          cos(rotation) * (uv.x - mid) + sin(rotation) * (uv.y - mid) + mid,
+          cos(rotation) * (uv.y - mid) - sin(rotation) * (uv.x - mid) + mid
         );
-        vec2 warpedUV = uv + w1 * 0.42 + w2 * 0.28 + w3 * 0.18;
+      }
+
+      vec3 threeColorFluid(vec3 wp, float t, float theta) {
+        float totalSpin = theta * 1.2;
+        vec2 fluidWarp  = getFluidOffset(wp * 1.5, t * 1.2, totalSpin);
+        vec2 baseUV     = vec2(atan(wp.z, wp.x) / 6.28318 + 0.5, wp.y * 0.5 + 0.5);
+        baseUV          = rotateUV(baseUV, theta * 0.5);
+        vec2 warpedUV   = baseUV + fluidWarp;
+
+        vec2 fluidWarp2 = getFluidOffset(wp * 1.1, t * 0.7, totalSpin + 2.1);
+        vec2 baseUV2    = vec2(wp.y * 0.5 + 0.5, atan(wp.x, wp.z) / 6.28318 + 0.5);
+        baseUV2         = rotateUV(baseUV2, theta * 0.3);
+        vec2 warpedUV2  = baseUV2 + fluidWarp2;
 
         float blend1 = sin(warpedUV.x * 6.28318 * 1.5 + warpedUV.y * 3.14159) * 0.5 + 0.5;
-        vec2 w4 = getFluidOffset(wp * 0.75, t * 0.28, 1.05);
-        blend1 = mix(blend1, sin((warpedUV.x + w4.x * 0.22) * 6.28318) * 0.5 + 0.5, 0.38);
         blend1 = smoothstep(0.18, 0.82, blend1);
-
-        vec2 w5 = getFluidOffset(wp * 1.1, t * 0.5,  1.3);
-        vec2 w6 = getFluidOffset(wp * 0.9, t * 0.75, 3.7);
-        vec2 w7 = getFluidOffset(wp * 1.5, t * 0.35, 5.9);
-
-        vec2 uv2       = vec2(wp.y * 0.5 + 0.5, atan(wp.x, wp.z) / 6.28318 + 0.5);
-        vec2 warpedUV2 = uv2 + w5 * 0.38 + w6 * 0.24 + w7 * 0.15;
 
         float blend2 = cos(warpedUV2.x * 6.28318 * 1.2 + warpedUV2.y * 4.0 + t * 0.15) * 0.5 + 0.5;
         blend2 = smoothstep(0.2, 0.8, blend2);
@@ -204,16 +239,14 @@
         vec3  V       = normalize(vViewDir);
         float NdotV   = clamp(dot(N, V), 0.0, 1.0);
         float fresnel = pow(1.0 - NdotV, 2.2);
+        vec3  wp      = normalize(vWorldNormal);
+        float t       = time * 0.38;
 
-        // Fluid samples in world space — independent of ball spin
-        vec3 wp = normalize(rotateY(vWorldNormal, -modelRotY));
-        float t = time * 0.38;
-
-        vec3 fluidCol = threeColorFluid(wp, t);
+        vec3 fluidCol = threeColorFluid(wp, t, uTheta);
 
         float blurS = 0.025 + fresnel * 0.035;
-        vec3 fluidR = threeColorFluid(normalize(rotateY(vWorldNormal + vec3( blurS, 0.0, 0.0), -modelRotY)), t);
-        vec3 fluidB = threeColorFluid(normalize(rotateY(vWorldNormal + vec3(-blurS, 0.0, 0.0), -modelRotY)), t);
+        vec3 fluidR = threeColorFluid(normalize(vWorldNormal + vec3( blurS, 0.0, 0.0)), t, uTheta);
+        vec3 fluidB = threeColorFluid(normalize(vWorldNormal + vec3(-blurS, 0.0, 0.0)), t, uTheta);
         fluidCol.r  = fluidR.r;
         fluidCol.b  = fluidB.b;
 
@@ -245,12 +278,12 @@
       vertexShader: ballVert,
       fragmentShader: ballFrag,
       uniforms: {
-        time:      { value: 0 },
-        modelRotY: { value: 0 },
-        colorA:    { value: new THREE.Color(HEX_A) },
-        colorB:    { value: new THREE.Color(HEX_B) },
-        colorC:    { value: new THREE.Color(HEX_C) },
-        colorRim:  { value: new THREE.Color(HEX_RIM) },
+        time:     { value: 0 },
+        uTheta:   { value: 0 },
+        colorA:   { value: new THREE.Color(HEX_A) },
+        colorB:   { value: new THREE.Color(HEX_B) },
+        colorC:   { value: new THREE.Color(HEX_C) },
+        colorRim: { value: new THREE.Color(HEX_RIM) },
       },
       transparent: true,
       depthWrite:  true,
@@ -274,16 +307,30 @@
       (gltf) => {
         model = gltf.scene;
         model.scale.set(1, 1, 1);
+
         const box    = new THREE.Box3().setFromObject(model);
         const center = box.getCenter(new THREE.Vector3());
+        const size   = box.getSize(new THREE.Vector3());
+        const radius = Math.max(size.x, size.y, size.z) / 2;
+
         model.position.sub(center);
+
         model.traverse((child) => {
           if (child.isMesh) {
             child.material    = fluidMat;
             child.renderOrder = 0;
           }
         });
+
         scene.add(model);
+
+        // Glow shell — 30% bigger than the ball, renders behind via BackSide
+        const glowMesh = new THREE.Mesh(
+          new THREE.SphereGeometry(radius * 1.02, 50, 50),
+          glowMat
+        );
+        glowMesh.renderOrder = -1;
+        scene.add(glowMesh);
       },
       undefined,
       (e) => console.error(e)
@@ -295,17 +342,22 @@
       mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
     });
 
-    let rotY = 0;
+    let autoTheta = 0;
     const clock = new THREE.Clock();
     const animate = () => {
       requestAnimationFrame(animate);
       const elapsed = clock.getElapsedTime();
 
-      rotY += 0.006;
-      if (model) model.rotation.y = rotY;
+      autoTheta += 0.006;
+      if (model) model.rotation.y = autoTheta;
 
-      fluidMat.uniforms.time.value      = elapsed;
-      fluidMat.uniforms.modelRotY.value = rotY;
+      fluidMat.uniforms.time.value   = elapsed;
+      fluidMat.uniforms.uTheta.value = autoTheta;
+      glowMat.uniforms.time.value    = elapsed;
+
+      // Cycle glow color between A and B over time
+      const glowBlend = Math.sin(elapsed * 0.4) * 0.5 + 0.5;
+      glowMat.uniforms.glowColor.value.set(0xffffff);
 
       photoFilterPass.uniforms.uNoiseSeed.value = Math.random() * 100.0;
 
