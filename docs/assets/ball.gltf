@@ -2,7 +2,12 @@
     "asset": {
         "copyright": "2025 (c) Adobe Inc.",
         "generator": "Adobe Substance 3D Stager - cfd5f8abf16eac3560f90b27a1db259d32723931",
-        "version": "2.0"
+        "version": "2.0",
+        "extensions": {
+            "KHR_xmp_json_ld": {
+                "packet": 0
+            }
+        }
     },
     "accessors": [
         {
@@ -218,14 +223,44 @@
             "uri": "ball_binary.bin"
         }
     ],
+    "images": [
+        {
+            "name": "texture12508",
+            "uri": "ball_images/texture12508.jpg",
+            "mimeType": "image/jpeg"
+        }
+    ],
     "materials": [
         {
             "pbrMetallicRoughness": {
-                "metallicFactor": 0.0,
+                "metallicFactor": 0.75,
                 "roughnessFactor": 0.029999999329447748
             },
-            "name": "glass_material",
+            "name": "glass_material7",
             "extensions": {
+                "KHR_materials_specular": {
+                    "extensions": {
+                        "EXT_materials_specular_edge_color": {
+                            "specularEdgeColorEnabled": true
+                        }
+                    },
+                    "specularColorTexture": {
+                        "extensions": {
+                            "KHR_texture_transform": {
+                                "offset": [
+                                    0,
+                                    -99
+                                ],
+                                "rotation": 0,
+                                "scale": [
+                                    100,
+                                    100
+                                ]
+                            }
+                        },
+                        "index": 0
+                    }
+                },
                 "KHR_materials_volume": {
                     "attenuationColor": [
                         0.830769956111908,
@@ -300,14 +335,14 @@
                 4
             ],
             "translation": [
-                3.814697180359872e-8,
-                0.4185783267021179,
-                0.0
+                0.0,
+                0.7526798844337463,
+                -5.3589992887737029e-8
             ],
             "scale": [
-                50.0,
-                50.0,
-                50.0
+                90.90908813476563,
+                90.90908813476563,
+                90.90908813476563
             ],
             "name": "adobe-assets_n3d"
         },
@@ -365,6 +400,9 @@
             "name": "Icosphere-2_n3d"
         }
     ],
+    "samplers": [
+        {}
+    ],
     "scenes": [
         {
             "nodes": [
@@ -373,10 +411,38 @@
             "name": "scene"
         }
     ],
+    "textures": [
+        {
+            "name": "texture12508",
+            "sampler": 0,
+            "source": 0
+        }
+    ],
     "scene": 0,
+    "extensions": {
+        "KHR_xmp_json_ld": {
+            "packets": [
+                {
+                    "@context": {
+                        "dc": "http://purl.org/dc/elements/1.1/"
+                    },
+                    "dc:date": "2026-06-05T14:57:49.089Z",
+                    "dc:title": "ball.dn",
+                    "xmp:CreatorTool": "Adobe Substance 3D Stager"
+                }
+            ]
+        }
+    },
     "extensionsUsed": [
         "KHR_materials_transmission",
         "KHR_materials_ior",
-        "KHR_materials_volume"
+        "KHR_materials_volume",
+        "KHR_texture_transform",
+        "KHR_xmp_json_ld",
+        "KHR_materials_specular",
+        "EXT_materials_specular_edge_color"
+    ],
+    "extensionsRequired": [
+        "KHR_texture_transform"
     ]
 }
