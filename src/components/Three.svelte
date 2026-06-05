@@ -6,6 +6,7 @@
   import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
   import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
   import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+   import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
   import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
   let canvas;
@@ -116,6 +117,14 @@
     const composer = new EffectComposer(renderer);
     composer.setSize(W, H);
     composer.addPass(new RenderPass(scene, camera));
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(W, H), 
+      0.125,  // strength
+      0.5,  // radius
+      0.15  // threshold
+    ); 
+    composer.addPass(bloomPass);
+
     const photoFilterPass = new ShaderPass(postProcessShader);
     composer.addPass(photoFilterPass);
 
@@ -303,7 +312,7 @@
 
     const loader = new GLTFLoader();
     loader.load(
-      'https://jadiehm.github.io/three-test/assets/ball.gltf',
+      'https://jadiehm.github.io/three-test/assets/soccer_ball_orm_normal.glb',
       (gltf) => {
         model = gltf.scene;
         model.scale.set(1, 1, 1);

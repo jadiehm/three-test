@@ -1,7 +1,7 @@
 <script>
 	import { getContext } from "svelte";
 	import Footer from "$components/Footer.svelte";
-	import Three from "$components/ThreeGoogle.svelte";
+	import Three from "$components/ThreeBloom.svelte";
 
 	// const copy = getContext("copy");
 	// const data = getContext("data");
