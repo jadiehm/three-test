@@ -3,28 +3,109 @@
   import * as THREE from 'three';
   import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
   import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+  import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
+  import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+  import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+  import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
   let canvas;
   let model;
 
+  // ── EDIT THESE ────────────────────────────────────────────────────
+  const HEX_A   = '#0052B4';
+  const HEX_B   = '#D80027';
+  const HEX_C   = '#ffffff';
+  const HEX_RIM = '#1133ff';
+  // ─────────────────────────────────────────────────────────────────
+
+  const postProcessShader = {
+    uniforms: {
+      tDiffuse:    { value: null },
+      uNoiseSeed:  { value: 0.0 },
+      uDispersion: { value: 0.0045 },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D tDiffuse;
+      uniform float uNoiseSeed;
+      uniform float uDispersion;
+      varying vec2 vUv;
+
+      float screenNoise(vec2 co) {
+        return fract(sin(dot(co, vec2(12.9898, 78.233) + uNoiseSeed)) * 43758.5453);
+      }
+
+      void main() {
+        vec2  centerOffset   = vUv - 0.5;
+        float distFromCenter = length(centerOffset);
+        float tiltShiftBlur  = smoothstep(0.15, 0.55, distFromCenter) * 0.008;
+
+        vec3  color       = vec3(0.0);
+        float totalWeight = 0.0;
+
+        for (float x = -2.0; x <= 2.0; x += 1.0) {
+          for (float y = -2.0; y <= 2.0; y += 1.0) {
+            vec2 offset   = vec2(x, y) * tiltShiftBlur;
+            vec2 sampleUv = vUv + offset;
+
+            vec3 sampledColor;
+            sampledColor.r = texture2D(tDiffuse, 0.5 + (sampleUv - 0.5) * (1.0 + uDispersion * 1.5)).r;
+            sampledColor.g = texture2D(tDiffuse, sampleUv).g;
+            sampledColor.b = texture2D(tDiffuse, 0.5 + (sampleUv - 0.5) * (1.0 - uDispersion * 1.5)).b;
+
+            float weight = 1.0 - (length(vec2(x, y)) / 4.0);
+            color       += sampledColor * weight;
+            totalWeight += weight;
+          }
+        }
+        color /= totalWeight;
+
+        float grain = (screenNoise(vUv) - 0.5) * 0.1;
+        color += vec3(grain);
+
+        float vignette = smoothstep(0.75, 0.35, distFromCenter);
+        color *= mix(0.35, 1.0, vignette);
+
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `,
+  };
+
   onMount(() => {
     if (!canvas) return;
+
+    const W = canvas.clientWidth  || window.innerWidth;
+    const H = canvas.clientHeight || window.innerHeight;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x060608);
 
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.set(0, 0, 4);
+    const camera = new THREE.PerspectiveCamera(75, W / H, 0.1, 1000);
+    camera.position.set(1, 1, 1);
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(W, H);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.04);
-    scene.add(ambientLight);
+    new HDRLoader().load(
+      'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_08_1k.hdr',
+      (hdr) => {
+        hdr.mapping = THREE.EquirectangularReflectionMapping;
+        scene.environment = hdr;
+      }
+    );
 
-    const pointLight = new THREE.PointLight(0xffffff, 2.0, 100);
-    scene.add(pointLight);
+    const mouseLight = new THREE.PointLight(0xffffff, 0.6, 100);
+    scene.add(mouseLight);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -32,142 +113,177 @@
     controls.enableZoom = false;
     controls.enablePan = false;
 
-    // ── Volumetric interior blob shader ───────────────────────────
-    // A sphere slightly smaller than the ball, rendered with a
-    // ray-marched volume shader so color fills the interior as
-    // smooth swirling blobs — contained entirely inside the glass.
+    const composer = new EffectComposer(renderer);
+    composer.setSize(W, H);
+    composer.addPass(new RenderPass(scene, camera));
+    const photoFilterPass = new ShaderPass(postProcessShader);
+    composer.addPass(photoFilterPass);
 
-    const blobVert = `
-      varying vec3 vPos;
+    const ballVert = `
+      varying vec3 vWorldNormal;
       varying vec3 vNormal;
+      varying vec3 vViewDir;
+
       void main() {
-        vPos = position;
-        vNormal = normal;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        vWorldNormal    = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+        vNormal         = normalize(normalMatrix * normal);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        vViewDir        = normalize(-mvPosition.xyz);
+        gl_Position     = projectionMatrix * mvPosition;
       }
     `;
 
-    const blobFrag = `
+    const ballFrag = `
       uniform float time;
-      varying vec3 vPos;
+      uniform float modelRotY;
+      uniform vec3  colorA;
+      uniform vec3  colorB;
+      uniform vec3  colorC;
+      uniform vec3  colorRim;
+
+      varying vec3 vWorldNormal;
       varying vec3 vNormal;
+      varying vec3 vViewDir;
 
-      // Smooth noise via value noise
-      vec3 hash3(vec3 p) {
-        p = fract(p * vec3(443.8975, 397.2973, 491.1871));
-        p += dot(p, p.yxz + 19.19);
-        return fract((p.xxy + p.yzz) * p.zyx);
+      // Counter-rotate world normal around Y so fluid stays
+      // in world space regardless of ball rotation
+      vec3 rotateY(vec3 v, float a) {
+        float c = cos(a); float s = sin(a);
+        return vec3(v.x*c + v.z*s, v.y, -v.x*s + v.z*c);
       }
 
-      float noise(vec3 p) {
-        vec3 i = floor(p);
-        vec3 f = fract(p);
-        vec3 u = f * f * (3.0 - 2.0 * f);
-        return mix(
-          mix(mix(dot(hash3(i + vec3(0,0,0)), f - vec3(0,0,0)),
-                  dot(hash3(i + vec3(1,0,0)), f - vec3(1,0,0)), u.x),
-              mix(dot(hash3(i + vec3(0,1,0)), f - vec3(0,1,0)),
-                  dot(hash3(i + vec3(1,1,0)), f - vec3(1,1,0)), u.x), u.y),
-          mix(mix(dot(hash3(i + vec3(0,0,1)), f - vec3(0,0,1)),
-                  dot(hash3(i + vec3(1,0,1)), f - vec3(1,0,1)), u.x),
-              mix(dot(hash3(i + vec3(0,1,1)), f - vec3(0,1,1)),
-                  dot(hash3(i + vec3(1,1,1)), f - vec3(1,1,1)), u.x), u.y),
-          u.z
+      vec2 getFluidOffset(vec3 p, float t, float spinOffset) {
+        vec3 q = vec3(
+          sin(p.x * 1.5 + t * 0.8 + spinOffset),
+          cos(p.y * 1.2 + t * 0.6 - spinOffset),
+          sin(p.z * 1.4 + t * 0.7)
         );
+        vec3 r = vec3(
+          sin(p.z + q.x * 2.0 + t * 0.4),
+          cos(p.x + q.y * 1.8 + t * 0.5),
+          sin(p.y + q.z * 2.2 + t * 0.3)
+        );
+        return vec2(
+          sin(p.x + r.y * 2.5 + t * 0.6),
+          cos(p.y * r.x * 2.5 + t * 0.5)
+        ) * 0.5;
       }
 
-      float fbm(vec3 p) {
-        float v = 0.0;
-        float a = 0.5;
-        for (int i = 0; i < 5; i++) {
-          v += a * noise(p);
-          p = p * 2.1 + vec3(1.7, 9.2, 3.4);
-          a *= 0.5;
-        }
-        return v;
-      }
+      vec3 threeColorFluid(vec3 wp, float t) {
+        vec2 w1 = getFluidOffset(wp * 1.3, t * 0.9,  0.0);
+        vec2 w2 = getFluidOffset(wp * 1.0, t * 0.6,  2.1);
+        vec2 w3 = getFluidOffset(wp * 1.7, t * 0.4,  4.3);
 
-      vec3 colorA() { return vec3(0.05, 0.12, 0.9); }   // deep blue
-      vec3 colorB() { return vec3(0.9, 0.08, 0.15); }   // vivid red
-      vec3 colorC() { return vec3(0.6, 0.05, 0.7); }    // purple accent
+        vec2 uv = vec2(
+          atan(wp.z, wp.x) / 6.28318 + 0.5,
+          wp.y * 0.5 + 0.5
+        );
+        vec2 warpedUV = uv + w1 * 0.42 + w2 * 0.28 + w3 * 0.18;
+
+        float blend1 = sin(warpedUV.x * 6.28318 * 1.5 + warpedUV.y * 3.14159) * 0.5 + 0.5;
+        vec2 w4 = getFluidOffset(wp * 0.75, t * 0.28, 1.05);
+        blend1 = mix(blend1, sin((warpedUV.x + w4.x * 0.22) * 6.28318) * 0.5 + 0.5, 0.38);
+        blend1 = smoothstep(0.18, 0.82, blend1);
+
+        vec2 w5 = getFluidOffset(wp * 1.1, t * 0.5,  1.3);
+        vec2 w6 = getFluidOffset(wp * 0.9, t * 0.75, 3.7);
+        vec2 w7 = getFluidOffset(wp * 1.5, t * 0.35, 5.9);
+
+        vec2 uv2       = vec2(wp.y * 0.5 + 0.5, atan(wp.x, wp.z) / 6.28318 + 0.5);
+        vec2 warpedUV2 = uv2 + w5 * 0.38 + w6 * 0.24 + w7 * 0.15;
+
+        float blend2 = cos(warpedUV2.x * 6.28318 * 1.2 + warpedUV2.y * 4.0 + t * 0.15) * 0.5 + 0.5;
+        blend2 = smoothstep(0.2, 0.8, blend2);
+
+        vec3 ab = mix(colorA, colorB, blend1);
+        return mix(ab, colorC, blend2 * 0.65);
+      }
 
       void main() {
-        vec3 p = vPos * 2.2;
-        float t = time * 0.18;
+        vec3  N       = normalize(vNormal);
+        vec3  V       = normalize(vViewDir);
+        float NdotV   = clamp(dot(N, V), 0.0, 1.0);
+        float fresnel = pow(1.0 - NdotV, 2.2);
 
-        // Two fbm layers drifting in different directions
-        float n1 = fbm(p + vec3(t * 0.7, t * 0.4, t * 0.5));
-        float n2 = fbm(p * 0.8 - vec3(t * 0.5, t * 0.8, t * 0.3) + 4.3);
-        float n3 = fbm(p * 1.4 + vec3(t * 0.3, -t * 0.6, t * 0.7) + 8.7);
+        // Fluid samples in world space — independent of ball spin
+        vec3 wp = normalize(rotateY(vWorldNormal, -modelRotY));
+        float t = time * 0.38;
 
-        // Blend into color regions
-        float blend1 = smoothstep(0.3, 0.7, n1 + n2 * 0.4);
-        float blend2 = smoothstep(0.2, 0.8, n2 * n3);
+        vec3 fluidCol = threeColorFluid(wp, t);
 
-        vec3 col = mix(colorA(), colorB(), blend1);
-        col = mix(col, colorC(), blend2 * 0.45);
+        float blurS = 0.025 + fresnel * 0.035;
+        vec3 fluidR = threeColorFluid(normalize(rotateY(vWorldNormal + vec3( blurS, 0.0, 0.0), -modelRotY)), t);
+        vec3 fluidB = threeColorFluid(normalize(rotateY(vWorldNormal + vec3(-blurS, 0.0, 0.0), -modelRotY)), t);
+        fluidCol.r  = fluidR.r;
+        fluidCol.b  = fluidB.b;
 
-        // Brighten center, darken edge (subsurface feel)
-        float rim = 1.0 - pow(abs(dot(normalize(vNormal), vec3(0.0, 0.0, 1.0))), 0.6);
-        col = mix(col * 1.4, col * 0.5, rim * 0.5);
+        float iridPhase = fresnel * 5.0 + wp.y * 1.5 + time * 0.07;
+        vec3 irid = 0.5 + 0.5 * cos(6.28318 * (iridPhase + vec3(0.0, 0.33, 0.67)));
+        irid = mix(irid, colorRim, 0.5);
 
-        // Edge glow — blue-red chromatic rim
-        vec3 rimCol = mix(vec3(0.2, 0.3, 1.0), vec3(1.0, 0.1, 0.2), sin(time * 0.3) * 0.5 + 0.5);
-        col += rimCol * pow(rim, 2.5) * 1.2;
+        vec3  L1    = normalize(vec3(-3.0, -4.0, 3.0));
+        vec3  L2    = normalize(vec3( 3.0,  4.0, 4.0));
+        float spec1 = pow(max(dot(N, normalize(L1 + V)), 0.0), 120.0);
+        float spec2 = pow(max(dot(N, normalize(L2 + V)), 0.0), 120.0);
 
-        // Slight overall luminance boost so it glows through glass
-        col = pow(col, vec3(0.85));
+        float groove = 1.0 - pow(NdotV, 0.5);
 
-        gl_FragColor = vec4(col, 0.92);
+        vec3 col = fluidCol;
+        col += irid * fresnel * 0.7;
+        col += colorA * spec1 * 0.4;
+        col += colorB * spec2 * 0.4;
+        col += vec3(0.8, 0.9, 1.0) * (spec1 + spec2) * 0.3;
+        col  = mix(col, col * 0.12, pow(groove, 6.0) * 0.85);
+        col += colorRim * pow(fresnel, 3.0) * 1.1;
+
+        float alpha = mix(0.82, 0.98, fresnel * 0.6 + groove * 0.4);
+        gl_FragColor = vec4(col, alpha);
       }
     `;
 
-    // Sphere sized to sit just inside the glass ball (radius ~0.47 in model space)
-    // The GLTF is scaled 3x so this inner sphere is scaled to match
-    const innerSphere = new THREE.Mesh(
-      new THREE.SphereGeometry(0.47, 64, 64),
-      new THREE.ShaderMaterial({
-        vertexShader: blobVert,
-        fragmentShader: blobFrag,
-        uniforms: { time: { value: 0 } },
-        transparent: true,
-        depthWrite: false,
-        side: THREE.FrontSide,
-        blending: THREE.NormalBlending,
-      })
-    );
-    // Will be added after model loads so we can position correctly
+    const fluidMat = new THREE.ShaderMaterial({
+      vertexShader: ballVert,
+      fragmentShader: ballFrag,
+      uniforms: {
+        time:      { value: 0 },
+        modelRotY: { value: 0 },
+        colorA:    { value: new THREE.Color(HEX_A) },
+        colorB:    { value: new THREE.Color(HEX_B) },
+        colorC:    { value: new THREE.Color(HEX_C) },
+        colorRim:  { value: new THREE.Color(HEX_RIM) },
+      },
+      transparent: true,
+      depthWrite:  true,
+      side:        THREE.FrontSide,
+    });
 
-    // Soft colored point lights to tint the glass surface itself
     const lightDefs = [
-      { color: 0x0033ff, speed: 0.22, phase: 0.0 },
-      { color: 0xff0022, speed: 0.31, phase: 2.1 },
-      { color: 0x8800cc, speed: 0.19, phase: 4.2 },
+      { color: HEX_A, speed: 0.22, phase: 0.0 },
+      { color: HEX_B, speed: 0.31, phase: 2.1 },
+      { color: HEX_C, speed: 0.19, phase: 4.2 },
     ];
-    const innerLights = lightDefs.map(({ color, speed, phase }) => {
-      const light = new THREE.PointLight(color, 4.0, 12);
+    const dynLights = lightDefs.map(({ color, speed, phase }) => {
+      const light = new THREE.PointLight(new THREE.Color(color), 3.5, 16);
       scene.add(light);
       return { light, speed, phase };
     });
-    // ── End volumetric ─────────────────────────────────────────────
 
     const loader = new GLTFLoader();
     loader.load(
       'https://jadiehm.github.io/three-test/assets/ball.gltf',
       (gltf) => {
         model = gltf.scene;
-        model.scale.set(3, 3, 3);
-        const box = new THREE.Box3().setFromObject(model);
+        model.scale.set(1, 1, 1);
+        const box    = new THREE.Box3().setFromObject(model);
         const center = box.getCenter(new THREE.Vector3());
         model.position.sub(center);
+        model.traverse((child) => {
+          if (child.isMesh) {
+            child.material    = fluidMat;
+            child.renderOrder = 0;
+          }
+        });
         scene.add(model);
-
-        // Place inner sphere at the same center, scaled to match model
-        innerSphere.scale.set(3, 3, 3);
-        innerSphere.position.copy(model.position);
-        // Render before the glass so it shows through
-        innerSphere.renderOrder = -1;
-        scene.add(innerSphere);
       },
       undefined,
       (e) => console.error(e)
@@ -175,49 +291,55 @@
 
     const mouse = new THREE.Vector2();
     window.addEventListener('mousemove', (e) => {
-      mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouse.x =  (e.clientX / window.innerWidth)  * 2 - 1;
       mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
     });
 
+    let rotY = 0;
     const clock = new THREE.Clock();
     const animate = () => {
       requestAnimationFrame(animate);
       const elapsed = clock.getElapsedTime();
 
-      if (model) {
-        model.rotation.y += 0.006;
-        innerSphere.rotation.y = model.rotation.y * 0.4;
-        innerSphere.rotation.x = Math.sin(elapsed * 0.15) * 0.3;
-      }
+      rotY += 0.006;
+      if (model) model.rotation.y = rotY;
 
-      innerSphere.material.uniforms.time.value = elapsed;
+      fluidMat.uniforms.time.value      = elapsed;
+      fluidMat.uniforms.modelRotY.value = rotY;
 
-      innerLights.forEach(({ light, speed, phase }) => {
+      photoFilterPass.uniforms.uNoiseSeed.value = Math.random() * 100.0;
+
+      dynLights.forEach(({ light, speed, phase }) => {
         const t = elapsed * speed + phase;
         light.position.set(
-          Math.cos(t) * 2.0,
-          Math.sin(t * 0.7) * 2.0,
-          Math.sin(t) * 2.0
+          Math.cos(t) * 2.5,
+          Math.sin(t * 0.7) * 2.5,
+          Math.sin(t) * 2.5
         );
       });
 
-      pointLight.position.set(mouse.x * 5, mouse.y * 5, 2);
+      mouseLight.position.set(mouse.x * 5, mouse.y * 5, 3);
       controls.update();
-      renderer.render(scene, camera);
+      composer.render();
     };
 
     animate();
 
-    const handleResize = () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
+    const ro = new ResizeObserver(() => {
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      if (!w || !h) return;
+      camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(window.devicePixelRatio);
-    };
-    window.addEventListener('resize', handleResize);
+      renderer.setSize(w, h);
+      composer.setSize(w, h);
+    });
+    ro.observe(canvas);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      ro.disconnect();
+      composer.dispose();
+      renderer.dispose();
     };
   });
 </script>
@@ -225,16 +347,9 @@
 <canvas bind:this={canvas}></canvas>
 
 <style>
-  :global(body, html) {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-  }
   canvas {
     display: block;
     width: 100%;
-    height: 100%;
+    height: 100svh;
   }
 </style>
