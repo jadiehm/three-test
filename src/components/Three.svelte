@@ -12,8 +12,8 @@
   let model;
 
   // ── EDIT THESE ────────────────────────────────────────────────────
-  const HEX_A   = '#0052B4';
-  const HEX_B   = '#D80027';
+  const HEX_A   = '#338AF3';
+  const HEX_B   = '#FFDA44';
   const HEX_C   = '#ffffff';
   const HEX_RIM = '#1133ff';
   // ─────────────────────────────────────────────────────────────────
