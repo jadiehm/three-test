@@ -326,21 +326,33 @@
       if (fluidMaterial) fluidMaterial.dispose();
     };
   });
+
+  let letters = [..."United States"];
+  const maxBlur = 4;
+  const startSharpPct = 0.85;
 </script>
 
 <div class="presentation-container">
   <canvas bind:this={canvas}></canvas>
 
-  <div class="text-wrapper">
+
     <h1 class="country-name">
-      United States
+      {#each letters as letter, i}
+        {@const progress = i / (letters.length - 1)}
+        
+        {@const blurValue = progress < startSharpPct 
+          ? 0 
+          : ((progress - startSharpPct) / (1 - startSharpPct)) * maxBlur}
+          
+        {@const opacityValue = 1 - (blurValue / maxBlur) * 0.4}
+
+        <span style="filter: blur({blurValue}px); opacity: {opacityValue};">
+          {letter === ' ' ? '\u00A0' : letter}
+        </span>
+      {/each}
     </h1>
-    
-    <div class="text-blur-overlay" aria-hidden="true">
-      United States
-    </div>
+
   </div>
-</div>
 
 <style>
   .presentation-container {
@@ -356,50 +368,28 @@ canvas {
   height: 100%;
 }
 
-/* Bounds the overlay system tightly to the text area */
-.text-wrapper {
+h1 {
   position: absolute;
   bottom: 10%;
-  left: 50%;
-  transform: translateX(-50%);
-  display: inline-block;
-  z-index: 2;
-}
-
-/* Unified typography parameters across both layers */
-.country-name,
-.text-blur-overlay {
-  font-family: sans-serif; /* Swap with your project font */
+  width: 100%;
+  text-align: center;
   font-size: 10rem;
-  white-space: nowrap;
-  font-weight: bold;
-  color: #ffffff;
-  line-height:2;
-  padding: 2rem;
-  margin: 0;
-}
-
-/* Sharp Layer: Fades out smoothly as it travels right */
-.country-name {
-  mask-image: linear-gradient(to right, black 75%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to right, black 75%, transparent 100%);
+  color: #fff;
+  font-family: sans-serif;
   text-shadow: 0px 4px 20px rgba(0, 0, 0, 0.25);
 }
 
-/* ── THE TEXT BLUR OVERLAY DIV ─────────────────────────────────── */
-.text-blur-overlay {
+h1::after {
+  content: "United States";
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
-  height: 100%;
-  pointer-events: none; /* Allows mouse selection to hit the real text layer */
-
-  /* 1. Core blur mechanics + soft edge blooming glow */
-  filter: blur(7px) drop-shadow(0 0 0 rgba(255, 255, 255, 0.25)); 
-  
-  /* 2. Inverse mask: Invisible on the left, fully blurred on the right */
-  mask-image: linear-gradient(to right, transparent 75%, black 100%);
-  -webkit-mask-image: linear-gradient(to right, transparent 75%, black 100%);
+  text-align: center;
+  font-size: 10rem;
+  color: #fff;
+  font-family: sans-serif;
+  filter: blur(8px);
 }
+
 </style>
