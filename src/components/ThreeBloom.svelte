@@ -201,10 +201,10 @@
     renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
     
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
+    renderer.toneMappingExposure = 0.65;
 
     new HDRLoader().load(
-      'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_08_1k.hdr',
+      'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/lonely_road_afternoon_puresky_1k.hdr',
       (hdr) => {
         hdr.mapping = THREE.EquirectangularReflectionMapping;
         scene.environment = hdr;
@@ -219,7 +219,7 @@
     
     composer.addPass(new RenderPass(scene, camera));
 
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(W, H), 0.5, 0.4, 0.25); 
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(W, H), 0.25, 0.4, 0.25); 
     composer.addPass(bloomPass);
 
     const photoFilterPass = new ShaderPass(postProcessShader);
@@ -230,9 +230,9 @@
 
     const glassMaterial = new THREE.MeshPhysicalMaterial({
       transmission: 1.0, 
-      metalness: 0.15,
+      metalness: 0,
       ior: 1.45,
-      roughness: 0.08,
+      roughness: 0.14,
       clearcoat: 1.0,
       thickness: 0.15,
       side: THREE.FrontSide
