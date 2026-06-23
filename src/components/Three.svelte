@@ -2,415 +2,239 @@
   import { onMount } from 'svelte';
   import * as THREE from 'three';
   import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-  import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-  import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
-  import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-  import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-   import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-  import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
   let canvas;
+  let wrapper;
   let model;
-
-  // ── EDIT THESE ────────────────────────────────────────────────────
-  const HEX_A   = '#338AF3';
-  const HEX_B   = '#FFDA44';
-  const HEX_C   = '#ffffff';
-  const HEX_RIM = '#1133ff';
-  // ─────────────────────────────────────────────────────────────────
-
-  const postProcessShader = {
-    uniforms: {
-      tDiffuse:    { value: null },
-      uNoiseSeed:  { value: 0.0 },
-      uDispersion: { value: 0.0045 },
-    },
-    vertexShader: `
-      varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform sampler2D tDiffuse;
-      uniform float uNoiseSeed;
-      uniform float uDispersion;
-      varying vec2 vUv;
-
-      float screenNoise(vec2 co) {
-        return fract(sin(dot(co, vec2(12.9898, 78.233) + uNoiseSeed)) * 43758.5453);
-      }
-
-      void main() {
-        vec2  centerOffset   = vUv - 0.5;
-        float distFromCenter = length(centerOffset);
-        float tiltShiftBlur  = smoothstep(0.15, 0.55, distFromCenter) * 0.008;
-
-        vec3  color       = vec3(0.0);
-        float totalWeight = 0.0;
-
-        for (float x = -2.0; x <= 2.0; x += 1.0) {
-          for (float y = -2.0; y <= 2.0; y += 1.0) {
-            vec2 offset   = vec2(x, y) * tiltShiftBlur;
-            vec2 sampleUv = vUv + offset;
-
-            vec3 sampledColor;
-            sampledColor.r = texture2D(tDiffuse, 0.5 + (sampleUv - 0.5) * (1.0 + uDispersion * 1.5)).r;
-            sampledColor.g = texture2D(tDiffuse, sampleUv).g;
-            sampledColor.b = texture2D(tDiffuse, 0.5 + (sampleUv - 0.5) * (1.0 - uDispersion * 1.5)).b;
-
-            float weight = 1.0 - (length(vec2(x, y)) / 4.0);
-            color       += sampledColor * weight;
-            totalWeight += weight;
-          }
-        }
-        color /= totalWeight;
-
-        float grain = (screenNoise(vUv) - 0.5) * 0.1;
-        color += vec3(grain);
-
-        float vignette = smoothstep(0.75, 0.35, distFromCenter);
-        color *= mix(0.35, 1.0, vignette);
-
-        gl_FragColor = vec4(color, 1.0);
-      }
-    `,
-  };
+  let loaded = false;
 
   onMount(() => {
     if (!canvas) return;
 
-    const W = canvas.clientWidth  || window.innerWidth;
-    const H = canvas.clientHeight || window.innerHeight;
-
+    // ---------- scene ----------
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x060608);
+    scene.background = new THREE.Color(0x0a0a0a);
 
-    const camera = new THREE.PerspectiveCamera(75, W / H, 0.1, 1000);
-    camera.position.set(1, 1, 1);
-
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    renderer.setSize(W, H);
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-
-    new HDRLoader().load(
-      'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_08_1k.hdr',
-      (hdr) => {
-        hdr.mapping = THREE.EquirectangularReflectionMapping;
-        scene.environment = hdr;
-      }
+    const camera = new THREE.PerspectiveCamera(
+      45,
+      canvas.clientWidth / canvas.clientHeight,
+      0.1,
+      1000
     );
+    camera.position.set(0, 0, 4.2);
+    camera.lookAt(0, 0, 0);
 
-    const mouseLight = new THREE.PointLight(0xffffff, 0.6, 100);
-    scene.add(mouseLight);
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: true
+    });
+    renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.enableZoom = false;
-    controls.enablePan = false;
+    // ---------- lighting ----------
+    const ambient = new THREE.AmbientLight(0x4a4438, 0.9);
+    scene.add(ambient);
 
-    const composer = new EffectComposer(renderer);
-    composer.setSize(W, H);
-    composer.addPass(new RenderPass(scene, camera));
-    const bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(W, H), 
-      0.125,  // strength
-      0.5,  // radius
-      0.15  // threshold
-    ); 
-    composer.addPass(bloomPass);
+    const key = new THREE.DirectionalLight(0xfff8ec, 2.0);
+    key.position.set(5, 8, 6);
+    scene.add(key);
 
-    const photoFilterPass = new ShaderPass(postProcessShader);
-    composer.addPass(photoFilterPass);
+    const fill = new THREE.DirectionalLight(0xeaf0ff, 0.5);
+    fill.position.set(-4, 2, 3);
+    scene.add(fill);
 
-    // ── Outer glow shell ─────────────────────────────────────────
-    const glowVert = `
-      varying vec3 vNormal;
-      varying vec3 vViewDir;
-      void main() {
-        vNormal  = normalize(normalMatrix * normal);
-        vec4 mv  = modelViewMatrix * vec4(position, 1.0);
-        vViewDir = normalize(-mv.xyz);
-        gl_Position = projectionMatrix * mv;
-      }
-    `;
+    // cursor-driven point light — gives the glossy surface a moving highlight
+    const cursorLight = new THREE.PointLight(0xfff4dc, 2.0, 12);
+    cursorLight.position.set(0, 0, 2.5);
+    scene.add(cursorLight);
 
-    const glowFrag = `
-      uniform vec3  glowColor;
-      uniform float time;
-      varying vec3 vNormal;
-      varying vec3 vViewDir;
-
-      void main() {
-        float NdotV  = clamp(dot(normalize(vNormal), normalize(vViewDir)), 0.0, 1.0);
-        // Pure rim — bright at edge, invisible in center
-        float rim    = pow(1.0 - NdotV, 3.5);
-        // Breathe the glow slightly
-        float pulse  = 0.85 + 0.15 * sin(time * 0.8);
-        float alpha  = rim * pulse * 0.5;
-        gl_FragColor = vec4(glowColor * rim * pulse * 1.5, alpha);
-      }
-    `;
-
-    const glowMat = new THREE.ShaderMaterial({
-      vertexShader:   glowVert,
-      fragmentShader: glowFrag,
-      uniforms: {
-        glowColor: { value: new THREE.Color(HEX_A) },
-        time:      { value: 0 },
-      },
-      transparent: true,
-      depthWrite:  false,
-      side:        THREE.BackSide, // render inside-out so it surrounds the ball
-      blending:    THREE.AdditiveBlending,
+    // ---------- glossy "vanilla pudding" material ----------
+    const puddingMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0xfaf6ec,
+      roughness: 0.2,
+      metalness: 0.0,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.1,
+      reflectivity: 0.5
     });
 
-    const ballVert = `
-      varying vec3 vWorldNormal;
-      varying vec3 vNormal;
-      varying vec3 vViewDir;
-
-      void main() {
-        vWorldNormal    = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
-        vNormal         = normalize(normalMatrix * normal);
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        vViewDir        = normalize(-mvPosition.xyz);
-        gl_Position     = projectionMatrix * mvPosition;
-      }
-    `;
-
-    const ballFrag = `
-      uniform float time;
-      uniform float uTheta;
-      uniform vec3  colorA;
-      uniform vec3  colorB;
-      uniform vec3  colorC;
-      uniform vec3  colorRim;
-
-      varying vec3 vWorldNormal;
-      varying vec3 vNormal;
-      varying vec3 vViewDir;
-
-      vec2 getFluidOffset(vec3 p, float t, float spinOffset) {
-        vec3 q = vec3(
-          sin(p.x * 1.5 + t * 0.8 + spinOffset),
-          cos(p.y * 1.2 + t * 0.6 - spinOffset),
-          sin(p.z * 1.4 + t * 0.7)
-        );
-        vec3 r = vec3(
-          sin(p.z + q.x * 2.0 + t * 0.4),
-          cos(p.x + q.y * 1.8 + t * 0.5),
-          sin(p.y + q.z * 2.2 + t * 0.3)
-        );
-        return vec2(
-          sin(p.x + r.y * 2.5 + t * 0.6),
-          cos(p.y * r.x * 2.5 + t * 0.5)
-        ) * 0.35;
-      }
-
-      vec2 rotateUV(vec2 uv, float rotation) {
-        float mid = 0.5;
-        return vec2(
-          cos(rotation) * (uv.x - mid) + sin(rotation) * (uv.y - mid) + mid,
-          cos(rotation) * (uv.y - mid) - sin(rotation) * (uv.x - mid) + mid
-        );
-      }
-
-      vec3 threeColorFluid(vec3 wp, float t, float theta) {
-        float totalSpin = theta * 1.2;
-        vec2 fluidWarp  = getFluidOffset(wp * 1.5, t * 1.2, totalSpin);
-        vec2 baseUV     = vec2(atan(wp.z, wp.x) / 6.28318 + 0.5, wp.y * 0.5 + 0.5);
-        baseUV          = rotateUV(baseUV, theta * 0.5);
-        vec2 warpedUV   = baseUV + fluidWarp;
-
-        vec2 fluidWarp2 = getFluidOffset(wp * 1.1, t * 0.7, totalSpin + 2.1);
-        vec2 baseUV2    = vec2(wp.y * 0.5 + 0.5, atan(wp.x, wp.z) / 6.28318 + 0.5);
-        baseUV2         = rotateUV(baseUV2, theta * 0.3);
-        vec2 warpedUV2  = baseUV2 + fluidWarp2;
-
-        float blend1 = sin(warpedUV.x * 6.28318 * 1.5 + warpedUV.y * 3.14159) * 0.5 + 0.5;
-        blend1 = smoothstep(0.18, 0.82, blend1);
-
-        float blend2 = cos(warpedUV2.x * 6.28318 * 1.2 + warpedUV2.y * 4.0 + t * 0.15) * 0.5 + 0.5;
-        blend2 = smoothstep(0.2, 0.8, blend2);
-
-        vec3 ab = mix(colorA, colorB, blend1);
-        return mix(ab, colorC, blend2 * 0.65);
-      }
-
-      void main() {
-        vec3  N       = normalize(vNormal);
-        vec3  V       = normalize(vViewDir);
-        float NdotV   = clamp(dot(N, V), 0.0, 1.0);
-        float fresnel = pow(1.0 - NdotV, 2.2);
-        vec3  wp      = normalize(vWorldNormal);
-        float t       = time * 0.38;
-
-        vec3 fluidCol = threeColorFluid(wp, t, uTheta);
-
-        float blurS = 0.025 + fresnel * 0.035;
-        vec3 fluidR = threeColorFluid(normalize(vWorldNormal + vec3( blurS, 0.0, 0.0)), t, uTheta);
-        vec3 fluidB = threeColorFluid(normalize(vWorldNormal + vec3(-blurS, 0.0, 0.0)), t, uTheta);
-        fluidCol.r  = fluidR.r;
-        fluidCol.b  = fluidB.b;
-
-        float iridPhase = fresnel * 5.0 + wp.y * 1.5 + time * 0.07;
-        vec3 irid = 0.5 + 0.5 * cos(6.28318 * (iridPhase + vec3(0.0, 0.33, 0.67)));
-        irid = mix(irid, colorRim, 0.5);
-
-        vec3  L1    = normalize(vec3(-3.0, -4.0, 3.0));
-        vec3  L2    = normalize(vec3( 3.0,  4.0, 4.0));
-        float spec1 = pow(max(dot(N, normalize(L1 + V)), 0.0), 120.0);
-        float spec2 = pow(max(dot(N, normalize(L2 + V)), 0.0), 120.0);
-
-        float groove = 1.0 - pow(NdotV, 0.5);
-
-        vec3 col = fluidCol;
-        col += irid * fresnel * 0.7;
-        col += colorA * spec1 * 0.4;
-        col += colorB * spec2 * 0.4;
-        col += vec3(0.8, 0.9, 1.0) * (spec1 + spec2) * 0.3;
-        col  = mix(col, col * 0.12, pow(groove, 6.0) * 0.85);
-        col += colorRim * pow(fresnel, 3.0) * 1.1;
-
-        float alpha = mix(0.82, 0.98, fresnel * 0.6 + groove * 0.4);
-        gl_FragColor = vec4(col, alpha);
-      }
-    `;
-
-    const fluidMat = new THREE.ShaderMaterial({
-      vertexShader: ballVert,
-      fragmentShader: ballFrag,
-      uniforms: {
-        time:     { value: 0 },
-        uTheta:   { value: 0 },
-        colorA:   { value: new THREE.Color(HEX_A) },
-        colorB:   { value: new THREE.Color(HEX_B) },
-        colorC:   { value: new THREE.Color(HEX_C) },
-        colorRim: { value: new THREE.Color(HEX_RIM) },
-      },
-      transparent: true,
-      depthWrite:  true,
-      side:        THREE.FrontSide,
-    });
-
-    const lightDefs = [
-      { color: HEX_A, speed: 0.22, phase: 0.0 },
-      { color: HEX_B, speed: 0.31, phase: 2.1 },
-      { color: HEX_C, speed: 0.19, phase: 4.2 },
-    ];
-    const dynLights = lightDefs.map(({ color, speed, phase }) => {
-      const light = new THREE.PointLight(new THREE.Color(color), 3.5, 16);
-      scene.add(light);
-      return { light, speed, phase };
-    });
-
+    // ---------- load model ----------
     const loader = new GLTFLoader();
+    const modelURL = 'https://jadiehm.github.io/three-test/assets/splat.gltf';
+
     loader.load(
-      'https://jadiehm.github.io/three-test/assets/soccer_ball_orm_normal.glb',
+      modelURL,
       (gltf) => {
         model = gltf.scene;
-        model.scale.set(1, 1, 1);
+        model.scale.set(5, 5, 5);
 
-        const box    = new THREE.Box3().setFromObject(model);
+        // center on the model's actual visual bounds, not just its origin —
+        // GLTF exports often have a pivot that isn't at the mesh's center
+        const box = new THREE.Box3().setFromObject(model);
         const center = box.getCenter(new THREE.Vector3());
-        const size   = box.getSize(new THREE.Vector3());
-        const radius = Math.max(size.x, size.y, size.z) / 2;
-
         model.position.sub(center);
 
         model.traverse((child) => {
           if (child.isMesh) {
-            child.material    = fluidMat;
-            child.renderOrder = 0;
+            child.material = puddingMaterial;
+            // cache the rest-state geometry so ripples have a stable base
+            // to displace from each frame, rather than compounding drift
+            const pos = child.geometry.attributes.position;
+            if (pos) {
+              child.userData.basePos = Float32Array.from(pos.array);
+            }
           }
         });
 
         scene.add(model);
-
-        // Glow shell — 30% bigger than the ball, renders behind via BackSide
-        const glowMesh = new THREE.Mesh(
-          new THREE.SphereGeometry(radius * 1.02, 50, 50),
-          glowMat
-        );
-        glowMesh.renderOrder = -1;
-        scene.add(glowMesh);
+        loaded = true;
       },
       undefined,
-      (e) => console.error(e)
+      (error) => {
+        console.error('Failed to load splat model:', error);
+      }
     );
 
-    const mouse = new THREE.Vector2();
-    window.addEventListener('mousemove', (e) => {
-      mouse.x =  (e.clientX / window.innerWidth)  * 2 - 1;
-      mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-    });
+    // ---------- cursor tracking ----------
+    // drives both the moving highlight and the ripple origin
+    const mouse = { x: 0, y: 0 };
+    const targetMouse = { x: 0, y: 0 };
 
-    let autoTheta = 0;
+    function handleMouseMove(event) {
+      const rect = canvas.getBoundingClientRect();
+      targetMouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      targetMouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    }
+    window.addEventListener('mousemove', handleMouseMove);
+
+    // ---------- scroll-tied rotation ----------
+    // replaces free-orbit drag: rotation is driven by the page, not the visitor's
+    // accidental cursor drag, so the brand moment stays controlled
+    let scrollRotation = 0;
+    function handleScroll() {
+      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+      const progress = maxScroll > 0 ? window.scrollY / maxScroll : 0;
+      scrollRotation = progress * Math.PI * 0.6;
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
+    // ---------- ripple deformation ----------
+    // perturbs each mesh's vertices outward from the mouse-projected point,
+    // same decay shape as a real ripple: sine wave damped by distance and time
+    const rippleOrigin = new THREE.Vector3();
+    const raycaster = new THREE.Raycaster();
+    const rippleStrength = { current: 0 };
+
+    function updateRippleOrigin() {
+      raycaster.setFromCamera(mouse, camera);
+      // project onto the z=0 plane the model sits on
+      const t = -raycaster.ray.origin.z / raycaster.ray.direction.z;
+      rippleOrigin.copy(raycaster.ray.origin).addScaledVector(raycaster.ray.direction, t);
+    }
+
+    function applyRipple(time) {
+      if (!model) return;
+      updateRippleOrigin();
+
+      model.traverse((child) => {
+        if (!child.isMesh || !child.userData.basePos) return;
+        const pos = child.geometry.attributes.position;
+        const base = child.userData.basePos;
+
+        for (let i = 0; i < pos.array.length; i += 3) {
+          const bx = base[i];
+          const by = base[i + 1];
+          const bz = base[i + 2];
+
+          // distance from this vertex (in model local space, roughly) to the ripple origin
+          const dx = bx - rippleOrigin.x / 5;
+          const dy = by - rippleOrigin.y / 5;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          const wave = Math.sin(dist * 8 - time * 2) * Math.exp(-dist * 5) * 0.12;
+          const ambientWobble = Math.sin(bx * 2 + time * 0.8) * 0.01;
+
+          pos.array[i + 2] = bz + wave + ambientWobble;
+        }
+        pos.needsUpdate = true;
+        child.geometry.computeVertexNormals();
+      });
+    }
+
+    // ---------- fade in once loaded ----------
+    function tickFade() {
+      if (loaded && canvas.style.opacity !== '1') {
+        canvas.style.opacity = '1';
+      }
+    }
+
+    // ---------- animation loop ----------
     const clock = new THREE.Clock();
-    const animate = () => {
+
+    function animate() {
       requestAnimationFrame(animate);
       const elapsed = clock.getElapsedTime();
 
-      autoTheta += 0.006;
-      if (model) model.rotation.y = autoTheta;
+      // smooth cursor easing so the light/ripple glide rather than snap
+      mouse.x += (targetMouse.x - mouse.x) * 0.08;
+      mouse.y += (targetMouse.y - mouse.y) * 0.08;
 
-      fluidMat.uniforms.time.value   = elapsed;
-      fluidMat.uniforms.uTheta.value = autoTheta;
-      glowMat.uniforms.time.value    = elapsed;
+      cursorLight.position.set(mouse.x * 3, mouse.y * 3, 2.2);
 
-      // Cycle glow color between A and B over time
-      const glowBlend = Math.sin(elapsed * 0.4) * 0.5 + 0.5;
-      glowMat.uniforms.glowColor.value.set(0xffffff);
+      if (model) {
+        model.rotation.y = scrollRotation + Math.sin(elapsed * 0.15) * 0.05;
+        applyRipple(elapsed);
+      }
 
-      photoFilterPass.uniforms.uNoiseSeed.value = Math.random() * 100.0;
-
-      dynLights.forEach(({ light, speed, phase }) => {
-        const t = elapsed * speed + phase;
-        light.position.set(
-          Math.cos(t) * 2.5,
-          Math.sin(t * 0.7) * 2.5,
-          Math.sin(t) * 2.5
-        );
-      });
-
-      mouseLight.position.set(mouse.x * 5, mouse.y * 5, 3);
-      controls.update();
-      composer.render();
-    };
-
+      tickFade();
+      renderer.render(scene, camera);
+    }
     animate();
 
-    const ro = new ResizeObserver(() => {
+    // ---------- resize ----------
+    function handleResize() {
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
-      if (!w || !h) return;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
-      composer.setSize(w, h);
-    });
-    ro.observe(canvas);
+    }
+    window.addEventListener('resize', handleResize);
 
     return () => {
-      ro.disconnect();
-      composer.dispose();
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('scroll', handleScroll);
       renderer.dispose();
     };
   });
 </script>
 
-<canvas bind:this={canvas}></canvas>
+<div class="wrapper" bind:this={wrapper}>
+  <canvas bind:this={canvas}></canvas>
+</div>
 
 <style>
+  /* fills its parent edge-to-edge — the parent element needs
+     position: relative (or similar) and a real height, e.g.
+     a hero section with min-height: 100vh */
+  .wrapper {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: #0a0a0a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
   canvas {
     display: block;
     width: 100%;
-    height: 100svh;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 0.6s ease;
   }
 </style>
