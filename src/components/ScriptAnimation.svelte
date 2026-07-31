@@ -305,13 +305,13 @@
 
   svg {
     width: 80%;
-    max-width: 400px;
+    max-width: 800px;
     height: auto;
   }
 
   .st0 {
         fill: none;
-        stroke: #ffffff;
+        stroke: #FFFEFB;
         stroke-miterlimit: 10;
         stroke-width: 11px; 
         stroke-linecap: round;
@@ -319,6 +319,6 @@
     }
 
     .base {
-        fill: #ffffff;
+        fill: #FFFEFB;
     }
 </style>

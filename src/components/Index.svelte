@@ -1,7 +1,7 @@
 <script>
 	import { getContext } from "svelte";
 	import Footer from "$components/Footer.svelte";
-	import ScriptAnimation from "$components/ScriptAnimation.svelte";
+	import ScriptAnimation from "$components/ThreeStudio.svelte";
 
 	// const copy = getContext("copy");
 	// const data = getContext("data");

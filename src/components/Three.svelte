@@ -51,7 +51,7 @@
 
     // ---------- glossy "vanilla pudding" material ----------
     const puddingMaterial = new THREE.MeshPhysicalMaterial({
-      color: 0xfaf6ec,
+      color: 0xffffff,
       roughness: 0.2,
       metalness: 0.0,
       clearcoat: 1.0,
@@ -61,7 +61,7 @@
 
     // ---------- load model ----------
     const loader = new GLTFLoader();
-    const modelURL = 'https://jadiehm.github.io/three-test/assets/splat.gltf';
+    const modelURL = 'assets/studio.gltf';
 
     loader.load(
       modelURL,
